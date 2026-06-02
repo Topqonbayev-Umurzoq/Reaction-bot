@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Bot Token (from .env file)
+# Bot Token (.env faylidan o'qiladi)
 BOT_TOKEN = os.getenv('BOT_TOKEN', '')
 
 # Logging
