@@ -7,9 +7,9 @@ from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import Command, StateFilter
-from database.db_manager import DatabaseManager
-from config.config import AdminStates, Config
-from config.localization import get_text
+from db_manager import DatabaseManager
+from config import AdminStates, Config
+from localization import get_text
 import logging
 import asyncio
 

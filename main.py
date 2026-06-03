@@ -14,10 +14,14 @@ from contextlib import asynccontextmanager
 import os
 from dotenv import load_dotenv
 
+# Load environment vars before importing config
+load_dotenv()
+
 # Konfiguratsiya va modullar import
-from config.config import Config
-from database.db_manager import DatabaseManager
-from handlers import user_handlers, admin_handlers
+from config import Config
+from db_manager import DatabaseManager
+import user_handlers
+import admin_handlers
 
 # Logging setup
 logging.basicConfig(
