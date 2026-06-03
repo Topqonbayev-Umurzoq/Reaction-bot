@@ -39,10 +39,8 @@ def get_language_keyboard() -> InlineKeyboardMarkup:
 def get_main_menu_keyboard(language: str) -> ReplyKeyboardMarkup:
     """Asosiy menyu klaviaturas"""
     buttons = [
-        [KeyboardButton(text=get_text('btn_channels', language))],
-        [KeyboardButton(text=get_text('btn_groups', language))],
-        [KeyboardButton(text=get_text('btn_guide', language))],
-        [KeyboardButton(text=get_text('btn_stats', language))]
+        [KeyboardButton(text="📢 KANAL UCHUN"), KeyboardButton(text="👥 GURUH UCHUN")],
+        [KeyboardButton(text=get_text('btn_guide', language)), KeyboardButton(text=get_text('btn_stats', language))]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
@@ -157,11 +155,11 @@ async def handle_main_menu(message: types.Message, state: FSMContext):
         text = message.text
         
         # Kanallar tugmasi
-        if text == get_text('btn_channels', language):
+        if text == "📢 KANAL UCHUN":
             await handle_channels_menu(message, language, state)
         
         # Guruhlar tugmasi
-        elif text == get_text('btn_groups', language):
+        elif text == "👥 GURUH UCHUN":
             await handle_groups_menu(message, language, state)
         
         # Qo'llanma tugmasi
