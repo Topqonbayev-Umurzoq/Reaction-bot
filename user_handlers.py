@@ -356,8 +356,7 @@ async def process_add_channel(message: types.Message, state: FSMContext):
                 await message.answer(f"✅ Kanal '{chat_title}' muvaffaqiyatli qo'shildi.")
 
                 # Show main menu
-                main_menu_text = get_text('main_menu', language)
-                await message.answer(main_menu_text, reply_markup=get_main_menu_keyboard(language))
+                await message.answer("🏠 Asosiy menyu", reply_markup=get_main_menu_keyboard(language))
                 await state.clear()
             else:
                 await message.answer("❌ Siz bu kanalda admin emassiz. Iltimos, admin huquqlari bilan qayta urinib ko'ring.")
