@@ -143,6 +143,27 @@ class DatabaseManager:
             cursor = await conn.execute("SELECT COUNT(*) FROM groups WHERE is_active = True")
             return (await cursor.fetchone())[0]
     
+    async def get_all_groups(self) -> List[Dict]:
+        """Barcha faol guruhlarni olish"""
+        async with self.get_connection() as conn:
+            cursor = await conn.execute(
+                "SELECT * FROM groups WHERE is_active = True ORDER BY group_title ASC"
+            )
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+    
+    async def get_user_groups(self, user_id: int) -> List[Dict]:
+        """Foydalanuvchining guruhlarini olish"""
+        async with self.get_connection() as conn:
+            cursor = await conn.execute(
+                """SELECT DISTINCT g.* FROM groups g 
+                   WHERE g.is_active = True 
+                   ORDER BY g.group_title ASC""",
+                ()
+            )
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+    
     # ============ CHANNELS ============
     
     async def add_channel(self, channel_id: int, channel_title: str, 
@@ -181,6 +202,18 @@ class DatabaseManager:
         async with self.get_connection() as conn:
             cursor = await conn.execute(
                 "SELECT * FROM channels WHERE is_active = True ORDER BY created_at DESC"
+            )
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+    
+    async def get_user_channels(self, user_id: int) -> List[Dict]:
+        """Foydalanuvchi qo'shgan kanallarni olish"""
+        async with self.get_connection() as conn:
+            cursor = await conn.execute(
+                """SELECT * FROM channels 
+                   WHERE added_by_user = ? AND is_active = True 
+                   ORDER BY created_at DESC""",
+                (user_id,)
             )
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
