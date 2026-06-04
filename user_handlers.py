@@ -39,10 +39,8 @@ def get_language_keyboard() -> InlineKeyboardMarkup:
 def get_main_menu_keyboard(language: str) -> InlineKeyboardMarkup:
     """Asosiy menyu klaviaturas"""
     buttons = [
-        [InlineKeyboardButton(text="� Kanal qo'shish", callback_data="add_channel_prompt")],
-        [InlineKeyboardButton(text="👥 Guruh qo'shish", callback_data="add_group_prompt")],
-        [InlineKeyboardButton(text="📋 Kanallar ko'rish", callback_data="menu_channels")],
-        [InlineKeyboardButton(text="📋 Guruhlar ko'rish", callback_data="menu_groups")]
+        [InlineKeyboardButton(text="🔗 Kanal qo'shish", callback_data="add_channel_prompt")],
+        [InlineKeyboardButton(text="👥 Guruh qo'shish", callback_data="add_group_prompt")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -61,42 +59,39 @@ def get_back_keyboard(language: str) -> ReplyKeyboardMarkup:
 async def start_command(message: types.Message, state: FSMContext):
     """
     /start buyrugi
-    Til tanlash ekrani ko'rsatadi
+    Birinchi marta til so'raladi, keyin asosiy menyu
     """
     try:
         user_id = message.from_user.id
-        
-        # Foydalanuvchini bazaga qo'shish
-        await db.add_or_update_user(
-            user_id=user_id,
-            username=message.from_user.username or "Unknown",
-            first_name=message.from_user.first_name or "",
-            last_name=message.from_user.last_name or "",
-            language="uz",  # Default
-            is_bot=message.from_user.is_bot
-        )
         
         # Mavcut foydalanuvchini tekshirish
         user = await db.get_user(user_id)
         
         if user:
+            # Foydalanuvchi allaqachon mavjud
             current_language = user.get('language_code', 'uz')
+            welcome_text = "🎉 Xush kelibsiz! Asosiy menyuga qaytdingiz."
+            await message.answer(
+                welcome_text,
+                reply_markup=get_main_menu_keyboard(current_language)
+            )
+        else:
+            # Yangi foydalanuvchi - til tanlash
+            await db.add_or_update_user(
+                user_id=user_id,
+                username=message.from_user.username or "Unknown",
+                first_name=message.from_user.first_name or "",
+                last_name=message.from_user.last_name or "",
+                language="uz",  # Default
+                is_bot=message.from_user.is_bot
+            )
             
-            # Agar til allaqachon tanlangan bo'lsa, asosiy menyuni ko'rsatish
-            if current_language and current_language != 'uz':
-                welcome_text = get_text('main_menu', current_language)
-                await message.answer(
-                    welcome_text,
-                    reply_markup=get_main_menu_keyboard(current_language)
-                )
-            else:
-                # Til tanlash ekrani
-                welcome_text = get_text('start_welcome', 'uz')
-                await message.answer(
-                    welcome_text,
-                    reply_markup=get_language_keyboard()
-                )
-                await state.set_state(UserStates.selecting_language)
+            welcome_text = "👋 Xush kelibsiz! Iltimos, tilni tanlang:"
+            await message.answer(
+                welcome_text,
+                reply_markup=get_language_keyboard()
+            )
+            await state.set_state(UserStates.selecting_language)
         
         # Log qilish
         await db.add_log(user_id, "start_command", "Bot ishga tushdi")
@@ -104,6 +99,36 @@ async def start_command(message: types.Message, state: FSMContext):
     except Exception as e:
         logger.error(f"Start command error: {e}")
         await message.answer("❌ Xato yuz berdi")
+
+
+# ============================================
+# /SETTINGS BUYRUGI
+# ============================================
+
+@router.message(Command("settings"))
+async def settings_command(message: types.Message, state: FSMContext):
+    """
+    /settings buyrugi - tilni o'zgartirish
+    """
+    try:
+        user_id = message.from_user.id
+        user = await db.get_user(user_id)
+        
+        if not user:
+            await message.answer("❌ Foydalanuvchi topilmadi. /start buyrug'idan boshlang.")
+            return
+        
+        settings_text = "⚙️ SOZLAMALAR\n\nTilni tanlang:"
+        await message.answer(
+            settings_text,
+            reply_markup=get_language_keyboard()
+        )
+        await state.set_state(UserStates.selecting_language)
+        
+    except Exception as e:
+        logger.error(f"Settings command error: {e}")
+        await message.answer("❌ Xato yuz berdi")
+
 
 # ============================================
 # TIL TANLASH
@@ -403,8 +428,10 @@ async def process_add_group(message: types.Message, state: FSMContext):
                 await message.answer(f"✅ Guruh '{chat_title}' muvaffaqiyatli qo'shildi.")
 
                 # Show main menu
-                main_menu_text = get_text('main_menu', language)
-                await message.answer(main_menu_text, reply_markup=get_main_menu_keyboard(language))
+                await message.answer(
+                    "👍 Guruh qo'shildi! Asosiy menyuga qaytdingiz.",
+                    reply_markup=get_main_menu_keyboard(language)
+                )
                 await state.clear()
             else:
                 await message.answer("❌ Siz bu guruhda admin emassiz. Iltimos, admin huquqlari bilan qayta urinib ko'ring.")
@@ -784,11 +811,10 @@ async def back_to_main_menu_callback(query: types.CallbackQuery, state: FSMConte
             return
         
         language = user.get('language_code', 'uz')
-        main_menu_text = get_text('main_menu', language)
         
         await state.clear()
         await query.message.edit_text(
-            main_menu_text,
+            "🎉 Asosiy menyu",
             reply_markup=get_main_menu_keyboard(language)
         )
         

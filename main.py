@@ -49,9 +49,7 @@ async def set_commands(bot: Bot):
     """Bot buyruqlarini o'rnatish"""
     commands = [
         BotCommand(command="start", description="Botni ishga tushirish"),
-        BotCommand(command="admin", description="Admin paneli"),
-        BotCommand(command="help", description="Yordam"),
-        BotCommand(command="settings", description="Sozlamalar"),
+        BotCommand(command="settings", description="Tilni o'zgartirish"),
     ]
     await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
     logger.info("Bot commands set successfully")
