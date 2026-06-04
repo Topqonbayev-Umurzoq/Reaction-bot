@@ -3,11 +3,10 @@
 # FOYDALANUVCHI HANDLERS
 # ============================================
 
-import re
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
-from aiogram.filters import Command, StateFilter
+from aiogram.filters import Command
 from db_manager import DatabaseManager
 from config import UserStates
 from localization import get_text, LANGUAGES
@@ -40,8 +39,10 @@ def get_language_keyboard() -> InlineKeyboardMarkup:
 def get_main_menu_keyboard(language: str) -> ReplyKeyboardMarkup:
     """Asosiy menyu klaviaturas"""
     buttons = [
-        [KeyboardButton(text="📢 KANAL UCHUN"), KeyboardButton(text="👥 GURUH UCHUN")],
-        [KeyboardButton(text=get_text('btn_guide', language)), KeyboardButton(text=get_text('btn_stats', language))]
+        [KeyboardButton(text=get_text('btn_channels', language))],
+        [KeyboardButton(text=get_text('btn_groups', language))],
+        [KeyboardButton(text=get_text('btn_guide', language))],
+        [KeyboardButton(text=get_text('btn_stats', language))]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
@@ -141,150 +142,6 @@ async def select_language(query: types.CallbackQuery, state: FSMContext):
 # MAIN MENU TUGMALARI
 # ============================================
 
-
-# ============================================
-# KANALLAR MENYUSI
-# ============================================
-
-async def handle_channels_menu(message: types.Message, language: str, state: FSMContext):
-    """Kanallar menyusi"""
-    try:
-        channels_text = get_text('channels_menu', language)
-        
-        buttons = [
-            [KeyboardButton(text=get_text('btn_add_channel', language))],
-            [KeyboardButton(text=get_text('btn_remove_channel', language))],
-            [KeyboardButton(text=get_text('btn_back', language))]
-        ]
-        
-        kb = ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
-        await message.answer(channels_text, reply_markup=kb)
-        await state.set_state(UserStates.selecting_channel)
-        
-    except Exception as e:
-        logger.error(f"Channels menu error: {e}")
-
-# ============================================
-# CHANNEL INPUT PARSING
-
-def parse_channel_input(channel_input: str):
-    """Kanal identifikatorini tahlil qiladi"""
-    if not channel_input:
-        return None
-    channel_input = channel_input.strip()
-    # Support t.me links and @username formats
-    url_match = re.match(r'^(?:https?://)?t\.me/(@?[A-Za-z0-9_]{5,})$', channel_input, re.IGNORECASE)
-    if url_match:
-        username = url_match.group(1)
-        return username if username.startswith('@') else f'@{username}'
-    if re.match(r'^@[A-Za-z0-9_]{5,}$', channel_input):
-        return channel_input
-    if re.match(r'^-?\d+$', channel_input):
-        try:
-            return int(channel_input)
-        except ValueError:
-            return None
-    return None
-
-@router.message(StateFilter(UserStates.selecting_channel), F.text)
-async def handle_channel_menu_choice(message: types.Message, state: FSMContext):
-    """Kanal boshqarish menyusi tanlovlarini qayta ishlaydi"""
-    try:
-        user = await db.get_user(message.from_user.id)
-        language = user.get('language_code', 'uz') if user else 'uz'
-        text = message.text
-
-        if text == get_text('btn_add_channel', language):
-            await message.answer(get_text('enter_channel_id', language))
-            await state.set_state(UserStates.add_channel)
-            return
-
-        if text == get_text('btn_remove_channel', language):
-            await message.answer(get_text('enter_channel_id', language))
-            await state.set_state(UserStates.remove_channel)
-            return
-
-        if text == get_text('btn_back', language):
-            await state.clear()
-            await message.answer(get_text('main_menu', language), reply_markup=get_main_menu_keyboard(language))
-            return
-
-        await message.answer(get_text('error', language), reply_markup=ReplyKeyboardMarkup(keyboard=[
-            [KeyboardButton(text=get_text('btn_add_channel', language))],
-            [KeyboardButton(text=get_text('btn_remove_channel', language))],
-            [KeyboardButton(text=get_text('btn_back', language))]
-        ], resize_keyboard=True))
-
-    except Exception as e:
-        logger.error(f"Channel menu choice error: {e}")
-
-@router.message(StateFilter(UserStates.add_channel))
-async def process_add_channel(message: types.Message, state: FSMContext):
-    """Kanal qo'shish jarayoni"""
-    user_id = message.from_user.id
-    user = await db.get_user(user_id)
-    language = user.get('language_code', 'uz') if user else 'uz'
-    channel_input = message.text.strip()
-
-    channel_identifier = parse_channel_input(channel_input)
-    if not channel_identifier:
-        await message.answer(get_text('invalid_channel', language))
-        return
-
-    try:
-        chat = await message.bot.get_chat(channel_identifier)
-        bot_user = await message.bot.get_me()
-        await message.bot.get_chat_member(chat.id, bot_user.id)
-    except Exception as e:
-        logger.error(f"Channel verification failed: {e}")
-        await message.answer(get_text('invalid_channel', language))
-        return
-
-    try:
-        await db.add_channel(
-            channel_id=chat.id,
-            channel_title=chat.title or chat.username or 'Unknown',
-            channel_username=f'@{chat.username}' if chat.username else '',
-            user_id=user_id
-        )
-        await db.add_log(user_id, 'add_channel', f'Added channel: {chat.id}')
-        await message.answer(get_text('channel_added', language), reply_markup=get_main_menu_keyboard(language))
-        await state.clear()
-    except Exception as e:
-        logger.error(f"Add channel failed: {e}")
-        await message.answer(get_text('error', language))
-        await state.clear()
-
-@router.message(StateFilter(UserStates.remove_channel))
-async def process_remove_channel(message: types.Message, state: FSMContext):
-    """Kanal o'chirish jarayoni"""
-    user_id = message.from_user.id
-    user = await db.get_user(user_id)
-    language = user.get('language_code', 'uz') if user else 'uz'
-    channel_input = message.text.strip()
-
-    channel_identifier = parse_channel_input(channel_input)
-    if not channel_identifier:
-        await message.answer(get_text('invalid_channel', language))
-        return
-
-    try:
-        if isinstance(channel_identifier, str):
-            chat = await message.bot.get_chat(channel_identifier)
-            channel_id = chat.id
-        else:
-            channel_id = channel_identifier
-        await db.remove_channel(channel_id)
-        await message.answer(get_text('channel_removed', language), reply_markup=get_main_menu_keyboard(language))
-        await state.clear()
-    except Exception as e:
-        logger.error(f"Remove channel failed: {e}")
-        await message.answer(get_text('invalid_channel', language))
-        await state.clear()
-
-# ============================================
-# MAIN MENU TUGMALARI
-
 @router.message(F.text)
 async def handle_main_menu(message: types.Message, state: FSMContext):
     """Asosiy menyu tugmalarini qayta ishlash"""
@@ -300,11 +157,11 @@ async def handle_main_menu(message: types.Message, state: FSMContext):
         text = message.text
         
         # Kanallar tugmasi
-        if text == "📢 KANAL UCHUN":
+        if text == get_text('btn_channels', language):
             await handle_channels_menu(message, language, state)
         
         # Guruhlar tugmasi
-        elif text == "👥 GURUH UCHUN":
+        elif text == get_text('btn_groups', language):
             await handle_groups_menu(message, language, state)
         
         # Qo'llanma tugmasi
@@ -331,6 +188,28 @@ async def handle_main_menu(message: types.Message, state: FSMContext):
     
     except Exception as e:
         logger.error(f"Main menu handler error: {e}")
+
+# ============================================
+# KANALLAR MENYUSI
+# ============================================
+
+async def handle_channels_menu(message: types.Message, language: str, state: FSMContext):
+    """Kanallar menyusi"""
+    try:
+        channels_text = get_text('channels_menu', language)
+        
+        buttons = [
+            [KeyboardButton(text=get_text('btn_add_channel', language))],
+            [KeyboardButton(text=get_text('btn_remove_channel', language))],
+            [KeyboardButton(text=get_text('btn_back', language))]
+        ]
+        
+        kb = ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+        await message.answer(channels_text, reply_markup=kb)
+        await state.set_state(UserStates.selecting_channel)
+        
+    except Exception as e:
+        logger.error(f"Channels menu error: {e}")
 
 # ============================================
 # GURUH REAKSIYALARI MENYUSI

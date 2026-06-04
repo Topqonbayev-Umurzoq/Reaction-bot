@@ -3,7 +3,6 @@
 # ADMIN HANDLERS
 # ============================================
 
-import re
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
@@ -170,46 +169,28 @@ async def add_force_channel(message: types.Message, state: FSMContext):
     except Exception as e:
         logger.error(f"Add force channel error: {e}")
 
-def parse_admin_channel_input(channel_input: str):
-    """Kanal identifikatorini tahlil qiladi"""
-    if not channel_input:
-        return None
-    channel_input = channel_input.strip()
-    url_match = re.match(r'^(?:https?://)?t\.me/(@?[A-Za-z0-9_]{5,})$', channel_input, re.IGNORECASE)
-    if url_match:
-        username = url_match.group(1)
-        return username if username.startswith('@') else f'@{username}'
-    if re.match(r'^@[A-Za-z0-9_]{5,}$', channel_input):
-        return channel_input
-    if re.match(r'^-?\d+$', channel_input):
-        try:
-            return int(channel_input)
-        except ValueError:
-            return None
-    return None
-
 @router.message(StateFilter(AdminStates.add_force_channel))
 async def process_add_force_channel(message: types.Message, state: FSMContext):
     """Kanal qo'shish jarayoni"""
     try:
         user_id = message.from_user.id
-        channel_input = message.text.strip()
-        channel_identifier = parse_admin_channel_input(channel_input)
-
-        if not channel_identifier:
-            await message.answer("❌ Noto'g'ri format! -1001234567890 yoki @username yoki t.me/username kiriting")
-            return
-
+        channel_input = message.text
+        
+        # Channel ID yoki username dan channel ID olish
         try:
-            chat = await message.bot.get_chat(channel_identifier)
-            bot_user = await message.bot.get_me()
-            await message.bot.get_chat_member(chat.id, bot_user.id)
-            channel_id = chat.id
-        except Exception as e:
-            logger.error(f"Force channel verification failed: {e}")
-            await message.answer("❌ Kanal topilmadi yoki bot uni tekshirishga ruxsatga ega emas.")
+            if channel_input.startswith('-'):
+                channel_id = int(channel_input)
+            elif channel_input.startswith('@'):
+                # Bot API orqali channel ID olish
+                channel_id = channel_input
+            else:
+                await message.answer("❌ Noto'g'ri format! -1001234567890 yoki @username kiriting")
+                return
+        except ValueError:
+            await message.answer("❌ Noto'g'ri kanal ID!")
             return
-
+        
+        # Kanalni majburiy obunaga qo'shish
         await db.add_force_subscribe_channel(channel_id)
         await message.answer("✅ Kanal majburiy obunaga qo'shildi!")
         await db.add_log(user_id, "add_force_channel", f"Kanal qo'shildi: {channel_id}")
