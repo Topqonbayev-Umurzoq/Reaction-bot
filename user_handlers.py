@@ -39,8 +39,10 @@ def get_language_keyboard() -> InlineKeyboardMarkup:
 def get_main_menu_keyboard(language: str) -> InlineKeyboardMarkup:
     """Asosiy menyu klaviaturas"""
     buttons = [
-        [InlineKeyboardButton(text="🔗 Kanal qo'shish", callback_data="add_channel_prompt")],
-        [InlineKeyboardButton(text="👥 Guruh qo'shish", callback_data="add_group_prompt")]
+        [InlineKeyboardButton(text="🔗 Kanallar", callback_data="menu_channels")],
+        [InlineKeyboardButton(text="👥 Guruhlar", callback_data="menu_groups")],
+        [InlineKeyboardButton(text="➕ Kanal qo'shish", callback_data="add_channel_prompt")],
+        [InlineKeyboardButton(text="➕ Guruh qo'shish", callback_data="add_group_prompt")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
