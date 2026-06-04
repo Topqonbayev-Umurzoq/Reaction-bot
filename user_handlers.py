@@ -39,9 +39,10 @@ def get_language_keyboard() -> InlineKeyboardMarkup:
 def get_main_menu_keyboard(language: str) -> InlineKeyboardMarkup:
     """Asosiy menyu klaviaturas"""
     buttons = [
-        [InlineKeyboardButton(text="🔗 " + get_text('btn_channels', language), callback_data="menu_channels")],
-        [InlineKeyboardButton(text="👥 " + get_text('btn_groups', language), callback_data="menu_groups")],
-        [InlineKeyboardButton(text="📹 " + get_text('btn_guide', language), callback_data="menu_guide")]
+        [InlineKeyboardButton(text="� Kanal qo'shish", callback_data="add_channel_prompt")],
+        [InlineKeyboardButton(text="👥 Guruh qo'shish", callback_data="add_group_prompt")],
+        [InlineKeyboardButton(text="📋 Kanallar ko'rish", callback_data="menu_channels")],
+        [InlineKeyboardButton(text="📋 Guruhlar ko'rish", callback_data="menu_groups")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -214,23 +215,55 @@ async def menu_guide_callback(query: types.CallbackQuery):
 # ============================================
 
 
-@router.callback_query(F.data == "add_channel_start")
-async def add_channel_start(query: types.CallbackQuery, state: FSMContext):
-    """Kanal qo'shish jarayonini boshlash: foydalanuvchidan kanalni yo'naltirish yoki @username yuborishni so'rash"""
+@router.callback_query(F.data == "add_channel_prompt")
+async def add_channel_prompt(query: types.CallbackQuery, state: FSMContext):
+    """Kanal qo'shish prompt - main menu callback"""
     try:
         user = await db.get_user(query.from_user.id)
         language = user.get('language_code', 'uz') if user else 'uz'
 
         prompt = (
-            "Iltimos, kanal postini botga yo'naltiring yoki kanalning @username ni yuboring.\n"
+            "🔗 KANAL QO'SHISH\n\n"
+            "Iltimos, kanal postini botga yo'naltiring yoki kanalning @username ni yuboring.\n\n"
             "Bot sizning kanalga admin ekanligingizni tekshiradi va agar shunday bo'lsa, kanal bazaga qo'shiladi."
         )
 
-        await query.message.edit_text(prompt)
+        buttons = [
+            [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="back_to_main_menu")]
+        ]
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+        await query.message.edit_text(prompt, reply_markup=kb)
         await state.set_state(UserStates.add_channel)
 
     except Exception as e:
         logger.error(f"Add channel start error: {e}")
+        await query.answer("❌ Xato yuz berdi", show_alert=True)
+
+
+@router.callback_query(F.data == "add_group_prompt")
+async def add_group_prompt(query: types.CallbackQuery, state: FSMContext):
+    """Guruh qo'shish prompt - main menu callback"""
+    try:
+        user = await db.get_user(query.from_user.id)
+        language = user.get('language_code', 'uz') if user else 'uz'
+
+        prompt = (
+            "👥 GURUH QO'SHISH\n\n"
+            "Iltimos, guruh nomini yoki @username ni yuboring.\n\n"
+            "Bot sizning guruhga admin ekanligingizni tekshiradi va agar shunday bo'lsa, guruh bazaga qo'shiladi."
+        )
+
+        buttons = [
+            [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="back_to_main_menu")]
+        ]
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+        await query.message.edit_text(prompt, reply_markup=kb)
+        await state.set_state(UserStates.add_group)
+
+    except Exception as e:
+        logger.error(f"Add group prompt error: {e}")
         await query.answer("❌ Xato yuz berdi", show_alert=True)
 
 
@@ -312,6 +345,77 @@ async def process_add_channel(message: types.Message, state: FSMContext):
         logger.error(f"Process add channel error: {e}")
         await message.answer("❌ Xato yuz berdi")
 
+@router.message()
+async def process_add_group(message: types.Message, state: FSMContext):
+    """Add group flow: accept group name or @username and verify admin rights"""
+    try:
+        # Ensure we're in the add_group state
+        current_state = await state.get_state()
+        if not current_state or 'add_group' not in current_state:
+            return
+
+        user = await db.get_user(message.from_user.id)
+        language = user.get('language_code', 'uz') if user else 'uz'
+
+        bot = message.bot
+
+        # Try to extract group info
+        chat_id = None
+        chat_username = None
+        chat_title = None
+
+        text = (message.text or '').strip()
+        if not text:
+            await message.answer("Iltimos, guruh nomini yoki @username ni yuboring.")
+            return
+
+        # Parse @username or t.me links
+        username = None
+        if text.startswith('@'):
+            username = text[1:]
+        elif 't.me/' in text:
+            username = text.split('t.me/')[-1].split()[0]
+
+        if username:
+            try:
+                chat_obj = await bot.get_chat('@' + username)
+                chat_id = chat_obj.id
+                chat_username = getattr(chat_obj, 'username', None) or ''
+                chat_title = getattr(chat_obj, 'title', None) or 'Nomalum guruh'
+            except Exception as e:
+                logger.error(f"Get group by username error: {e}")
+                await message.answer("Guruh topilmadi yoki botga cheklovlar mavjud. Iltimos, @username ni tekshirib qayta urinib ko'ring.")
+                return
+        else:
+            await message.answer("Iltimos, guruh nomini yoki @username ni yuboring.")
+            return
+
+        # Tekshirish: foydalanuvchi guruh admini yoki egasi ekanligini aniqlash
+        try:
+            member = await bot.get_chat_member(chat_id, message.from_user.id)
+            status = getattr(member, 'status', '')
+
+            if status in ['creator', 'administrator']:
+                # Qo'shish
+                await db.add_or_update_group(int(chat_id), chat_title, 'supergroup' if chat_username else 'group')
+                await db.add_log(message.from_user.id, 'add_group', f"Guruh qo'shildi: {chat_title} ({chat_id})")
+
+                await message.answer(f"✅ Guruh '{chat_title}' muvaffaqiyatli qo'shildi.")
+
+                # Show main menu
+                main_menu_text = get_text('main_menu', language)
+                await message.answer(main_menu_text, reply_markup=get_main_menu_keyboard(language))
+                await state.clear()
+            else:
+                await message.answer("❌ Siz bu guruhda admin emassiz. Iltimos, admin huquqlari bilan qayta urinib ko'ring.")
+
+        except Exception as e:
+            logger.error(f"Verify admin error for group: {e}")
+            await message.answer("Guruhni tekshirishda xato yuz berdi. Botning huquqlari va guruh sozlamalarini tekshiring.")
+
+    except Exception as e:
+        logger.error(f"Process add group error: {e}")
+        await message.answer("❌ Xato yuz berdi")
 @router.message(F.text)
 async def handle_text_messages(message: types.Message, state: FSMContext):
     """Boshqa barcha text xabarlarni qayta ishlash (fallback)"""

@@ -79,6 +79,7 @@ class UserStates(StatesGroup):
     # Kanal boshqarish
     selecting_channel = State()
     add_channel = State()
+    add_group = State()
     remove_channel = State()
     
     # Reaksiya boshqarish
