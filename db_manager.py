@@ -288,7 +288,7 @@ class DatabaseManager:
                 )
             rows = await cursor.fetchall()
             return [row[0] for row in rows]
-    
+
     async def get_group_reaction_settings(self, group_id: int) -> Optional[Dict]:
         """Guruh reaksiya sozlamalarini olish"""
         async with self.get_connection() as conn:
@@ -462,7 +462,7 @@ class DatabaseManager:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
-            
+
             -- BROADCAST_HISTORY
             CREATE TABLE IF NOT EXISTS broadcast_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

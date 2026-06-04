@@ -136,6 +136,7 @@ async def select_language(query: types.CallbackQuery, state: FSMContext):
         logger.error(f"Language selection error: {e}")
         await query.answer("❌ Xato yuz berdi")
 
+
 # ============================================
 # MAIN MENU TUGMALARI
 # ============================================
