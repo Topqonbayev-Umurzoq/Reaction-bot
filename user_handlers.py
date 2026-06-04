@@ -162,11 +162,10 @@ async def process_language_selection(query: types.CallbackQuery, state: FSMConte
         
         # Asosiy menyuni ko'rsatish
         welcome_text = get_text('language_selected', language)
-        main_menu_text = get_text('main_menu', language)
         
         await query.message.edit_text(welcome_text)
         await query.message.answer(
-            main_menu_text,
+            "🏠 Asosiy menyu",
             reply_markup=get_main_menu_keyboard(language)
         )
         
@@ -456,9 +455,8 @@ async def handle_text_messages(message: types.Message, state: FSMContext):
         language = user.get('language_code', 'uz')
         
         # Noto'g'ri xabar - bosh menyuni ko'rsatish
-        main_menu_text = get_text('main_menu', language)
         await message.answer(
-            main_menu_text,
+            "🏠 Asosiy menyu",
             reply_markup=get_main_menu_keyboard(language)
         )
         
