@@ -208,6 +208,110 @@ async def menu_guide_callback(query: types.CallbackQuery):
         logger.error(f"Menu guide callback error: {e}")
         await query.answer("❌ Xato yuz berdi", show_alert=True)
 
+
+# ============================================
+# KANAL QO'SHISH - FOYDALANUVCHI TOMONIDAN
+# ============================================
+
+
+@router.callback_query(F.data == "add_channel_start")
+async def add_channel_start(query: types.CallbackQuery, state: FSMContext):
+    """Kanal qo'shish jarayonini boshlash: foydalanuvchidan kanalni yo'naltirish yoki @username yuborishni so'rash"""
+    try:
+        user = await db.get_user(query.from_user.id)
+        language = user.get('language_code', 'uz') if user else 'uz'
+
+        prompt = (
+            "Iltimos, kanal postini botga yo'naltiring yoki kanalning @username ni yuboring.\n"
+            "Bot sizning kanalga admin ekanligingizni tekshiradi va agar shunday bo'lsa, kanal bazaga qo'shiladi."
+        )
+
+        await query.message.edit_text(prompt)
+        await state.set_state(UserStates.add_channel)
+
+    except Exception as e:
+        logger.error(f"Add channel start error: {e}")
+        await query.answer("❌ Xato yuz berdi", show_alert=True)
+
+
+@router.message()
+async def process_add_channel(message: types.Message, state: FSMContext):
+    """Add channel flow: accept forwarded channel post or @username and verify admin rights"""
+    try:
+        # Ensure we're in the add_channel state
+        current_state = await state.get_state()
+        if not current_state or 'add_channel' not in current_state:
+            return
+
+        user = await db.get_user(message.from_user.id)
+        language = user.get('language_code', 'uz') if user else 'uz'
+
+        bot = message.bot
+
+        # Try to extract channel info from forwarded message
+        chat_id = None
+        chat_username = None
+        chat_title = None
+
+        if message.forward_from_chat and getattr(message.forward_from_chat, 'type', None) == 'channel':
+            chat = message.forward_from_chat
+            chat_id = chat.id
+            chat_username = getattr(chat, 'username', None) or ''
+            chat_title = getattr(chat, 'title', None) or 'Nomalum kanal'
+        else:
+            text = (message.text or '').strip()
+            if not text:
+                await message.answer("Iltimos, kanal postini yo'naltiring yoki kanal @username yuboring.")
+                return
+
+            # Parse @username or t.me links
+            username = None
+            if text.startswith('@'):
+                username = text[1:]
+            elif 't.me/' in text:
+                username = text.split('t.me/')[-1].split()[0]
+
+            if username:
+                try:
+                    chat_obj = await bot.get_chat('@' + username)
+                    chat_id = chat_obj.id
+                    chat_username = getattr(chat_obj, 'username', None) or ''
+                    chat_title = getattr(chat_obj, 'title', None) or 'Nomalum kanal'
+                except Exception as e:
+                    logger.error(f"Get chat by username error: {e}")
+                    await message.answer("Kanal topilmadi yoki botga cheklovlar mavjud. Iltimos, @username ni tekshirib qayta urinib ko'ring.")
+                    return
+            else:
+                await message.answer("Iltimos, kanal postini yo'naltiring yoki kanal @username yuboring.")
+                return
+
+        # Tekshirish: foydalanuvchi kanal admini yoki egasi ekanligini aniqlash
+        try:
+            member = await bot.get_chat_member(chat_id, message.from_user.id)
+            status = getattr(member, 'status', '')
+
+            if status in ['creator', 'administrator']:
+                # Qo'shish
+                await db.add_channel(int(chat_id), chat_title, chat_username or '', message.from_user.id)
+                await db.add_log(message.from_user.id, 'add_channel', f"Kanal qo'shildi: {chat_title} ({chat_id})")
+
+                await message.answer(f"✅ Kanal '{chat_title}' muvaffaqiyatli qo'shildi.")
+
+                # Show main menu
+                main_menu_text = get_text('main_menu', language)
+                await message.answer(main_menu_text, reply_markup=get_main_menu_keyboard(language))
+                await state.clear()
+            else:
+                await message.answer("❌ Siz bu kanalda admin emassiz. Iltimos, admin huquqlari bilan qayta urinib ko'ring.")
+
+        except Exception as e:
+            logger.error(f"Verify admin error: {e}")
+            await message.answer("Kanalni tekshirishda xato yuz berdi. Botning huquqlari va kanal sozlamalarini tekshiring.")
+
+    except Exception as e:
+        logger.error(f"Process add channel error: {e}")
+        await message.answer("❌ Xato yuz berdi")
+
 @router.message(F.text)
 async def handle_text_messages(message: types.Message, state: FSMContext):
     """Boshqa barcha text xabarlarni qayta ishlash (fallback)"""
@@ -255,6 +359,11 @@ async def handle_channels_menu(query: types.CallbackQuery, language: str, state:
                     )
                 ])
             
+            # Kanal qo'shish tugmasi
+            buttons.append([
+                InlineKeyboardButton(text="➕ Kanal qo'shish", callback_data="add_channel_start")
+            ])
+
             # Orqaga tugmasi
             buttons.append([
                 InlineKeyboardButton(text="⬅️ Orqaga", callback_data="back_to_main_menu")
@@ -267,6 +376,7 @@ async def handle_channels_menu(query: types.CallbackQuery, language: str, state:
             text = "❌ Hali kanallar qo'shilmagan"
             
             buttons = [
+                [InlineKeyboardButton(text="➕ Kanal qo'shish", callback_data="add_channel_start")],
                 [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="back_to_main_menu")]
             ]
             
@@ -340,6 +450,10 @@ async def back_to_channels_callback(query: types.CallbackQuery, state: FSMContex
                     )
                 ])
             
+            buttons.append([
+                InlineKeyboardButton(text="➕ Kanal qo'shish", callback_data="add_channel_start")
+            ])
+
             buttons.append([
                 InlineKeyboardButton(text="⬅️ Orqaga", callback_data="back_to_main_menu")
             ])
