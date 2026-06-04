@@ -7,43 +7,6 @@ import os
 from typing import Optional
 
 class Config:
-    """Bot konfiguratsiyasi"""
-    
-    # Telegram API
-    BOT_TOKEN: str = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
-    BOT_USERNAME: str = "@reactions_bot"
-    
-    # Database
-    DATABASE_PATH: str = os.getenv("DATABASE_PATH", "reactions_bot.db")
-    
-    # Admin IDs (adminlarni belgilash)
-    ADMIN_IDS: list = [int(x) for x in os.getenv("ADMIN_IDS", "123456789").split(",")]
-    
-    # Websettings
-    WEBHOOK_URL: Optional[str] = os.getenv("WEBHOOK_URL", None)
-    WEBHOOK_PATH: str = "/webhook"
-    WEBAPP_HOST: str = "0.0.0.0"
-    WEBAPP_PORT: int = 8080
-    
-    # Logging
-    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
-    
-    # Timeout
-    REQUEST_TIMEOUT: int = 60
-    
-    # Rate limiting
-    RATE_LIMIT: int = 30  # xabarlar sonini cheklash
-    
-    # Emoji limit
-    MAX_REACTIONS_PER_GROUP: int = 20
-    
-    # Broadcast
-    BROADCAST_DELAY: float = 0.1  # Har bir xabar oraligida (sekundda)
-    
-    # Majburiy obuna tekshirish
-    FORCE_SUBSCRIBE_CHECK_INTERVAL: int = 3600  # 1 soat
-
-class Config:
     """Konfiguratsiya"""
     
     # ============ TELEGRAM ============

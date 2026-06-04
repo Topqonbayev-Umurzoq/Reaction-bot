@@ -6,7 +6,7 @@
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
-from aiogram.filters import Command
+from aiogram.filters import Command, StateFilter
 from db_manager import DatabaseManager
 from config import UserStates
 from localization import get_text, LANGUAGES
@@ -291,15 +291,10 @@ async def add_group_prompt(query: types.CallbackQuery, state: FSMContext):
         await query.answer("❌ Xato yuz berdi", show_alert=True)
 
 
-@router.message()
+@router.message(StateFilter(UserStates.add_channel))
 async def process_add_channel(message: types.Message, state: FSMContext):
     """Add channel flow: accept forwarded channel post or @username and verify admin rights"""
     try:
-        # Ensure we're in the add_channel state
-        current_state = await state.get_state()
-        if not current_state or 'add_channel' not in current_state:
-            return
-
         user = await db.get_user(message.from_user.id)
         language = user.get('language_code', 'uz') if user else 'uz'
 
@@ -368,15 +363,10 @@ async def process_add_channel(message: types.Message, state: FSMContext):
         logger.error(f"Process add channel error: {e}")
         await message.answer("❌ Xato yuz berdi")
 
-@router.message()
+@router.message(StateFilter(UserStates.add_group), F.text)
 async def process_add_group(message: types.Message, state: FSMContext):
     """Add group flow: accept group name or @username and verify admin rights"""
     try:
-        # Ensure we're in the add_group state
-        current_state = await state.get_state()
-        if not current_state or 'add_group' not in current_state:
-            return
-
         user = await db.get_user(message.from_user.id)
         language = user.get('language_code', 'uz') if user else 'uz'
 
@@ -441,7 +431,7 @@ async def process_add_group(message: types.Message, state: FSMContext):
     except Exception as e:
         logger.error(f"Process add group error: {e}")
         await message.answer("❌ Xato yuz berdi")
-@router.message(F.text)
+@router.message(StateFilter(None), F.text)
 async def handle_text_messages(message: types.Message, state: FSMContext):
     """Boshqa barcha text xabarlarni qayta ishlash (fallback)"""
     try:
@@ -489,7 +479,7 @@ async def handle_channels_menu(query: types.CallbackQuery, language: str, state:
             
             # Kanal qo'shish tugmasi
             buttons.append([
-                InlineKeyboardButton(text="➕ Kanal qo'shish", callback_data="add_channel_start")
+                InlineKeyboardButton(text="➕ Kanal qo'shish", callback_data="add_channel_prompt")
             ])
 
             # Orqaga tugmasi
@@ -504,7 +494,7 @@ async def handle_channels_menu(query: types.CallbackQuery, language: str, state:
             text = "❌ Hali kanallar qo'shilmagan"
             
             buttons = [
-                [InlineKeyboardButton(text="➕ Kanal qo'shish", callback_data="add_channel_start")],
+                [InlineKeyboardButton(text="➕ Kanal qo'shish", callback_data="add_channel_prompt")],
                 [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="back_to_main_menu")]
             ]
             
@@ -540,7 +530,7 @@ async def view_channel_callback(query: types.CallbackQuery, state: FSMContext):
 📌 Nomi: {channel_title}
 👤 Username: {channel_username}
 
-Qanaqa qilmasiz?
+Ushbu kanalda reaksiyalarni sozlash uchun tayyor.
         """
         
         buttons = [
@@ -579,7 +569,7 @@ async def back_to_channels_callback(query: types.CallbackQuery, state: FSMContex
                 ])
             
             buttons.append([
-                InlineKeyboardButton(text="➕ Kanal qo'shish", callback_data="add_channel_start")
+                InlineKeyboardButton(text="➕ Kanal qo'shish", callback_data="add_channel_prompt")
             ])
 
             buttons.append([
@@ -617,6 +607,9 @@ async def handle_groups_menu(query: types.CallbackQuery, language: str, state: F
                 ])
             
             buttons.append([
+                InlineKeyboardButton(text="➕ Guruh qo'shish", callback_data="add_group_prompt")
+            ])
+            buttons.append([
                 InlineKeyboardButton(text="⬅️ Orqaga", callback_data="back_to_main_menu")
             ])
             
@@ -626,6 +619,7 @@ async def handle_groups_menu(query: types.CallbackQuery, language: str, state: F
             text = "❌ Hali guruhlar qo'shilmagan\n\nBotni guruhga qo'shing va reaksiyalarni yoqing"
             
             buttons = [
+                [InlineKeyboardButton(text="➕ Guruh qo'shish", callback_data="add_group_prompt")],
                 [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="back_to_main_menu")]
             ]
             

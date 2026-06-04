@@ -30,9 +30,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Environment variables
-load_dotenv()
-
 # ============================================
 # GLOBAL VARIABLES
 # ============================================
