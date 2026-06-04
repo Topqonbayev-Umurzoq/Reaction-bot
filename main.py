@@ -30,6 +30,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Environment variables
+load_dotenv()
+
 # ============================================
 # GLOBAL VARIABLES
 # ============================================
@@ -46,7 +49,9 @@ async def set_commands(bot: Bot):
     """Bot buyruqlarini o'rnatish"""
     commands = [
         BotCommand(command="start", description="Botni ishga tushirish"),
-        BotCommand(command="settings", description="Tilni o'zgartirish"),
+        BotCommand(command="admin", description="Admin paneli"),
+        BotCommand(command="help", description="Yordam"),
+        BotCommand(command="settings", description="Sozlamalar"),
     ]
     await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
     logger.info("Bot commands set successfully")

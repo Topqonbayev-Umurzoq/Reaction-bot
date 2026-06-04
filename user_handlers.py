@@ -36,15 +36,13 @@ def get_language_keyboard() -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-def get_main_menu_keyboard(language: str) -> InlineKeyboardMarkup:
+def get_main_menu_keyboard(language: str) -> ReplyKeyboardMarkup:
     """Asosiy menyu klaviaturas"""
     buttons = [
-        [InlineKeyboardButton(text="🔗 Kanallar", callback_data="menu_channels")],
-        [InlineKeyboardButton(text="👥 Guruhlar", callback_data="menu_groups")],
-        [InlineKeyboardButton(text="➕ Kanal qo'shish", callback_data="add_channel_prompt")],
-        [InlineKeyboardButton(text="➕ Guruh qo'shish", callback_data="add_group_prompt")]
+        [KeyboardButton(text=get_text('btn_channels', language))],
+        [KeyboardButton(text=get_text('btn_groups', language))]
     ]
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 def get_back_keyboard(language: str) -> ReplyKeyboardMarkup:
     """Orqaga qaytish klaviaturas"""
@@ -61,39 +59,42 @@ def get_back_keyboard(language: str) -> ReplyKeyboardMarkup:
 async def start_command(message: types.Message, state: FSMContext):
     """
     /start buyrugi
-    Birinchi marta til so'raladi, keyin asosiy menyu
+    Til tanlash ekrani ko'rsatadi
     """
     try:
         user_id = message.from_user.id
+        
+        # Foydalanuvchini bazaga qo'shish
+        await db.add_or_update_user(
+            user_id=user_id,
+            username=message.from_user.username or "Unknown",
+            first_name=message.from_user.first_name or "",
+            last_name=message.from_user.last_name or "",
+            language="uz",  # Default
+            is_bot=message.from_user.is_bot
+        )
         
         # Mavcut foydalanuvchini tekshirish
         user = await db.get_user(user_id)
         
         if user:
-            # Foydalanuvchi allaqachon mavjud
             current_language = user.get('language_code', 'uz')
-            welcome_text = "🎉 Xush kelibsiz! Asosiy menyuga qaytdingiz."
-            await message.answer(
-                welcome_text,
-                reply_markup=get_main_menu_keyboard(current_language)
-            )
-        else:
-            # Yangi foydalanuvchi - til tanlash
-            await db.add_or_update_user(
-                user_id=user_id,
-                username=message.from_user.username or "Unknown",
-                first_name=message.from_user.first_name or "",
-                last_name=message.from_user.last_name or "",
-                language="uz",  # Default
-                is_bot=message.from_user.is_bot
-            )
             
-            welcome_text = "👋 Xush kelibsiz! Iltimos, tilni tanlang:"
-            await message.answer(
-                welcome_text,
-                reply_markup=get_language_keyboard()
-            )
-            await state.set_state(UserStates.selecting_language)
+            # Agar til allaqachon tanlangan bo'lsa, asosiy menyuni ko'rsatish
+            if current_language and current_language != 'uz':
+                welcome_text = get_text('main_menu', current_language)
+                await message.answer(
+                    welcome_text,
+                    reply_markup=get_main_menu_keyboard(current_language)
+                )
+            else:
+                # Til tanlash ekrani
+                welcome_text = get_text('start_welcome', 'uz')
+                await message.answer(
+                    welcome_text,
+                    reply_markup=get_language_keyboard()
+                )
+                await state.set_state(UserStates.selecting_language)
         
         # Log qilish
         await db.add_log(user_id, "start_command", "Bot ishga tushdi")
@@ -102,59 +103,16 @@ async def start_command(message: types.Message, state: FSMContext):
         logger.error(f"Start command error: {e}")
         await message.answer("❌ Xato yuz berdi")
 
-
-# ============================================
-# /SETTINGS BUYRUGI
-# ============================================
-
-@router.message(Command("settings"))
-async def settings_command(message: types.Message, state: FSMContext):
-    """
-    /settings buyrugi - tilni o'zgartirish
-    """
-    try:
-        user_id = message.from_user.id
-        user = await db.get_user(user_id)
-        
-        if not user:
-            await message.answer("❌ Foydalanuvchi topilmadi. /start buyrug'idan boshlang.")
-            return
-        
-        settings_text = "⚙️ SOZLAMALAR\n\nTilni tanlang:"
-        await message.answer(
-            settings_text,
-            reply_markup=get_language_keyboard()
-        )
-        await state.set_state(UserStates.selecting_language)
-        
-    except Exception as e:
-        logger.error(f"Settings command error: {e}")
-        await message.answer("❌ Xato yuz berdi")
-
-
 # ============================================
 # TIL TANLASH
 # ============================================
 
-@router.callback_query(F.data == "lang_uz")
-async def select_language_uz(query: types.CallbackQuery, state: FSMContext):
-    """Uzbek tili tanlash"""
-    await process_language_selection(query, state, "uz")
-
-@router.callback_query(F.data == "lang_en")
-async def select_language_en(query: types.CallbackQuery, state: FSMContext):
-    """English tili tanlash"""
-    await process_language_selection(query, state, "en")
-
-@router.callback_query(F.data == "lang_ru")
-async def select_language_ru(query: types.CallbackQuery, state: FSMContext):
-    """Russian tili tanlash"""
-    await process_language_selection(query, state, "ru")
-
-async def process_language_selection(query: types.CallbackQuery, state: FSMContext, language: str):
-    """Til tanlash jarayoni"""
+@router.callback_query(F.data.startswith("lang_"), UserStates.selecting_language)
+async def select_language(query: types.CallbackQuery, state: FSMContext):
+    """Til tanlash callback"""
     try:
         user_id = query.from_user.id
+        language = query.data.split("_")[1]  # "lang_uz" -> "uz"
         
         # Tilni bazaga saqlash
         await db.set_user_language(user_id, language)
@@ -164,10 +122,11 @@ async def process_language_selection(query: types.CallbackQuery, state: FSMConte
         
         # Asosiy menyuni ko'rsatish
         welcome_text = get_text('language_selected', language)
+        main_menu_text = get_text('main_menu', language)
         
         await query.message.edit_text(welcome_text)
         await query.message.answer(
-            "🏠 Asosiy menyu",
+            main_menu_text,
             reply_markup=get_main_menu_keyboard(language)
         )
         
@@ -175,267 +134,15 @@ async def process_language_selection(query: types.CallbackQuery, state: FSMConte
         
     except Exception as e:
         logger.error(f"Language selection error: {e}")
-        await query.answer("❌ Xato yuz berdi", show_alert=True)
+        await query.answer("❌ Xato yuz berdi")
 
 # ============================================
-# MAIN MENU CALLBACKS
+# MAIN MENU TUGMALARI
 # ============================================
 
-@router.callback_query(F.data == "menu_channels")
-async def menu_channels_callback(query: types.CallbackQuery, state: FSMContext):
-    """Kanallar menyu callback"""
-    try:
-        user_id = query.from_user.id
-        user = await db.get_user(user_id)
-        
-        if not user:
-            await query.answer("❌ Foydalanuvchi topilmadi", show_alert=True)
-            return
-        
-        language = user.get('language_code', 'uz')
-        await handle_channels_menu(query, language, state)
-        
-    except Exception as e:
-        logger.error(f"Menu channels callback error: {e}")
-        await query.answer("❌ Xato yuz berdi", show_alert=True)
-
-@router.callback_query(F.data == "menu_groups")
-async def menu_groups_callback(query: types.CallbackQuery, state: FSMContext):
-    """Guruhlar menyu callback"""
-    try:
-        user_id = query.from_user.id
-        user = await db.get_user(user_id)
-        
-        if not user:
-            await query.answer("❌ Foydalanuvchi topilmadi", show_alert=True)
-            return
-        
-        language = user.get('language_code', 'uz')
-        await handle_groups_menu(query, language, state)
-        
-    except Exception as e:
-        logger.error(f"Menu groups callback error: {e}")
-        await query.answer("❌ Xato yuz berdi", show_alert=True)
-
-@router.callback_query(F.data == "menu_guide")
-async def menu_guide_callback(query: types.CallbackQuery):
-    """Qo'llanma callback"""
-    try:
-        user_id = query.from_user.id
-        user = await db.get_user(user_id)
-        
-        if not user:
-            await query.answer("❌ Foydalanuvchi topilmadi", show_alert=True)
-            return
-        
-        language = user.get('language_code', 'uz')
-        await handle_guide(query, language)
-        
-    except Exception as e:
-        logger.error(f"Menu guide callback error: {e}")
-        await query.answer("❌ Xato yuz berdi", show_alert=True)
-
-
-# ============================================
-# KANAL QO'SHISH - FOYDALANUVCHI TOMONIDAN
-# ============================================
-
-
-@router.callback_query(F.data == "add_channel_prompt")
-async def add_channel_prompt(query: types.CallbackQuery, state: FSMContext):
-    """Kanal qo'shish prompt - main menu callback"""
-    try:
-        user = await db.get_user(query.from_user.id)
-        language = user.get('language_code', 'uz') if user else 'uz'
-
-        prompt = (
-            "🔗 KANAL QO'SHISH\n\n"
-            "Iltimos, kanal postini botga yo'naltiring yoki kanalning @username ni yuboring.\n\n"
-            "Bot sizning kanalga admin ekanligingizni tekshiradi va agar shunday bo'lsa, kanal bazaga qo'shiladi."
-        )
-
-        buttons = [
-            [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="back_to_main_menu")]
-        ]
-        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-
-        await query.message.edit_text(prompt, reply_markup=kb)
-        await state.set_state(UserStates.add_channel)
-
-    except Exception as e:
-        logger.error(f"Add channel start error: {e}")
-        await query.answer("❌ Xato yuz berdi", show_alert=True)
-
-
-@router.callback_query(F.data == "add_group_prompt")
-async def add_group_prompt(query: types.CallbackQuery, state: FSMContext):
-    """Guruh qo'shish prompt - main menu callback"""
-    try:
-        user = await db.get_user(query.from_user.id)
-        language = user.get('language_code', 'uz') if user else 'uz'
-
-        prompt = (
-            "👥 GURUH QO'SHISH\n\n"
-            "Iltimos, guruh nomini yoki @username ni yuboring.\n\n"
-            "Bot sizning guruhga admin ekanligingizni tekshiradi va agar shunday bo'lsa, guruh bazaga qo'shiladi."
-        )
-
-        buttons = [
-            [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="back_to_main_menu")]
-        ]
-        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-
-        await query.message.edit_text(prompt, reply_markup=kb)
-        await state.set_state(UserStates.add_group)
-
-    except Exception as e:
-        logger.error(f"Add group prompt error: {e}")
-        await query.answer("❌ Xato yuz berdi", show_alert=True)
-
-
-@router.message(StateFilter(UserStates.add_channel))
-async def process_add_channel(message: types.Message, state: FSMContext):
-    """Add channel flow: accept forwarded channel post or @username and verify admin rights"""
-    try:
-        user = await db.get_user(message.from_user.id)
-        language = user.get('language_code', 'uz') if user else 'uz'
-
-        bot = message.bot
-
-        # Try to extract channel info from forwarded message
-        chat_id = None
-        chat_username = None
-        chat_title = None
-
-        if message.forward_from_chat and getattr(message.forward_from_chat, 'type', None) == 'channel':
-            chat = message.forward_from_chat
-            chat_id = chat.id
-            chat_username = getattr(chat, 'username', None) or ''
-            chat_title = getattr(chat, 'title', None) or 'Nomalum kanal'
-        else:
-            text = (message.text or '').strip()
-            if not text:
-                await message.answer("Iltimos, kanal postini yo'naltiring yoki kanal @username yuboring.")
-                return
-
-            # Parse @username or t.me links
-            username = None
-            if text.startswith('@'):
-                username = text[1:]
-            elif 't.me/' in text:
-                username = text.split('t.me/')[-1].split()[0]
-
-            if username:
-                try:
-                    chat_obj = await bot.get_chat('@' + username)
-                    chat_id = chat_obj.id
-                    chat_username = getattr(chat_obj, 'username', None) or ''
-                    chat_title = getattr(chat_obj, 'title', None) or 'Nomalum kanal'
-                except Exception as e:
-                    logger.error(f"Get chat by username error: {e}")
-                    await message.answer("Kanal topilmadi yoki botga cheklovlar mavjud. Iltimos, @username ni tekshirib qayta urinib ko'ring.")
-                    return
-            else:
-                await message.answer("Iltimos, kanal postini yo'naltiring yoki kanal @username yuboring.")
-                return
-
-        # Tekshirish: foydalanuvchi kanal admini yoki egasi ekanligini aniqlash
-        try:
-            member = await bot.get_chat_member(chat_id, message.from_user.id)
-            status = getattr(member, 'status', '')
-
-            if status in ['creator', 'administrator']:
-                # Qo'shish
-                await db.add_channel(int(chat_id), chat_title, chat_username or '', message.from_user.id)
-                await db.add_log(message.from_user.id, 'add_channel', f"Kanal qo'shildi: {chat_title} ({chat_id})")
-
-                await message.answer(f"✅ Kanal '{chat_title}' muvaffaqiyatli qo'shildi.")
-
-                # Show main menu
-                await message.answer("🏠 Asosiy menyu", reply_markup=get_main_menu_keyboard(language))
-                await state.clear()
-            else:
-                await message.answer("❌ Siz bu kanalda admin emassiz. Iltimos, admin huquqlari bilan qayta urinib ko'ring.")
-
-        except Exception as e:
-            logger.error(f"Verify admin error: {e}")
-            await message.answer("Kanalni tekshirishda xato yuz berdi. Botning huquqlari va kanal sozlamalarini tekshiring.")
-
-    except Exception as e:
-        logger.error(f"Process add channel error: {e}")
-        await message.answer("❌ Xato yuz berdi")
-
-@router.message(StateFilter(UserStates.add_group), F.text)
-async def process_add_group(message: types.Message, state: FSMContext):
-    """Add group flow: accept group name or @username and verify admin rights"""
-    try:
-        user = await db.get_user(message.from_user.id)
-        language = user.get('language_code', 'uz') if user else 'uz'
-
-        bot = message.bot
-
-        # Try to extract group info
-        chat_id = None
-        chat_username = None
-        chat_title = None
-
-        text = (message.text or '').strip()
-        if not text:
-            await message.answer("Iltimos, guruh nomini yoki @username ni yuboring.")
-            return
-
-        # Parse @username or t.me links
-        username = None
-        if text.startswith('@'):
-            username = text[1:]
-        elif 't.me/' in text:
-            username = text.split('t.me/')[-1].split()[0]
-
-        if username:
-            try:
-                chat_obj = await bot.get_chat('@' + username)
-                chat_id = chat_obj.id
-                chat_username = getattr(chat_obj, 'username', None) or ''
-                chat_title = getattr(chat_obj, 'title', None) or 'Nomalum guruh'
-            except Exception as e:
-                logger.error(f"Get group by username error: {e}")
-                await message.answer("Guruh topilmadi yoki botga cheklovlar mavjud. Iltimos, @username ni tekshirib qayta urinib ko'ring.")
-                return
-        else:
-            await message.answer("Iltimos, guruh nomini yoki @username ni yuboring.")
-            return
-
-        # Tekshirish: foydalanuvchi guruh admini yoki egasi ekanligini aniqlash
-        try:
-            member = await bot.get_chat_member(chat_id, message.from_user.id)
-            status = getattr(member, 'status', '')
-
-            if status in ['creator', 'administrator']:
-                # Qo'shish
-                await db.add_or_update_group(int(chat_id), chat_title, 'supergroup' if chat_username else 'group')
-                await db.add_log(message.from_user.id, 'add_group', f"Guruh qo'shildi: {chat_title} ({chat_id})")
-
-                await message.answer(f"✅ Guruh '{chat_title}' muvaffaqiyatli qo'shildi.")
-
-                # Show main menu
-                await message.answer(
-                    "👍 Guruh qo'shildi! Asosiy menyuga qaytdingiz.",
-                    reply_markup=get_main_menu_keyboard(language)
-                )
-                await state.clear()
-            else:
-                await message.answer("❌ Siz bu guruhda admin emassiz. Iltimos, admin huquqlari bilan qayta urinib ko'ring.")
-
-        except Exception as e:
-            logger.error(f"Verify admin error for group: {e}")
-            await message.answer("Guruhni tekshirishda xato yuz berdi. Botning huquqlari va guruh sozlamalarini tekshiring.")
-
-    except Exception as e:
-        logger.error(f"Process add group error: {e}")
-        await message.answer("❌ Xato yuz berdi")
-@router.message(StateFilter(None), F.text)
-async def handle_text_messages(message: types.Message, state: FSMContext):
-    """Boshqa barcha text xabarlarni qayta ishlash (fallback)"""
+@router.message(F.text)
+async def handle_main_menu(message: types.Message, state: FSMContext):
+    """Asosiy menyu tugmalarini qayta ishlash"""
     try:
         user_id = message.from_user.id
         user = await db.get_user(user_id)
@@ -445,375 +152,189 @@ async def handle_text_messages(message: types.Message, state: FSMContext):
             return
         
         language = user.get('language_code', 'uz')
+        text = message.text
         
-        # Noto'g'ri xabar - bosh menyuni ko'rsatish
-        await message.answer(
-            "🏠 Asosiy menyu",
-            reply_markup=get_main_menu_keyboard(language)
-        )
+        # Kanallar tugmasi
+        if text == get_text('btn_channels', language):
+            await handle_channels_menu(message, language, state)
         
+        # Guruhlar tugmasi
+        elif text == get_text('btn_groups', language):
+            await handle_groups_menu(message, language, state)
+        
+        # Qo'llanma tugmasi
+        elif text == get_text('btn_guide', language):
+            await handle_guide(message, language)
+        
+        # Statistika tugmasi
+        elif text == get_text('btn_stats', language):
+            await handle_statistics(message, language)
+        
+        # Orqaga tugmasi
+        elif text == get_text('btn_back', language):
+            menu_text = get_text('main_menu', language)
+            await message.answer(
+                menu_text,
+                reply_markup=get_main_menu_keyboard(language)
+            )
+        
+        else:
+            await message.answer(
+                get_text('error', language),
+                reply_markup=get_main_menu_keyboard(language)
+            )
+    
     except Exception as e:
-        logger.error(f"Text handler error: {e}")
+        logger.error(f"Main menu handler error: {e}")
 
 # ============================================
 # KANALLAR MENYUSI
 # ============================================
 
-async def handle_channels_menu(query: types.CallbackQuery, language: str, state: FSMContext):
-    """Kanallar menyusi - Faqat tanlash"""
+async def handle_channels_menu(message: types.Message, language: str, state: FSMContext):
+    """Kanallar menyusi"""
     try:
-        # Admin qo'shgan barcha kanallarni olish
+        # Gather channels and show list
         all_channels = await db.get_all_channels()
-        
-        if all_channels:
-            text = "🔗 KANALLAR\n\nBir kanalni tanlang:"
-            
-            buttons = []
-            for channel in all_channels:
-                channel_id = channel.get('channel_id')
-                channel_title = channel.get('channel_title', 'Nomalum kanal')
-                buttons.append([
-                    InlineKeyboardButton(
-                        text=f"✓ {channel_title}",
-                        callback_data=f"view_channel_{channel_id}"
-                    )
-                ])
-            
-            # Kanal qo'shish tugmasi
-            buttons.append([
-                InlineKeyboardButton(text="➕ Kanal qo'shish", callback_data="add_channel_prompt")
-            ])
 
-            # Orqaga tugmasi
-            buttons.append([
-                InlineKeyboardButton(text="⬅️ Orqaga", callback_data="back_to_main_menu")
-            ])
-            
-            kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-            await query.message.edit_text(text, reply_markup=kb)
+        if all_channels:
+            lines = ["🔗 Kanallaringiz ro'yxati:\n"]
+            for idx, ch in enumerate(all_channels, 1):
+                title = ch.get('channel_title', 'Nomalum kanal')
+                username = ch.get('channel_username') or ''
+                ch_id = ch.get('channel_id')
+                if username:
+                    lines.append(f"{idx}. {title} ({username})")
+                else:
+                    lines.append(f"{idx}. {title} ({ch_id})")
+
+            channels_text = "\n".join(lines) + "\n\n" + get_text('channels_menu', language)
         else:
-            # Hech qanday kanal yo'q
-            text = "❌ Hali kanallar qo'shilmagan"
-            
-            buttons = [
-                [InlineKeyboardButton(text="➕ Kanal qo'shish", callback_data="add_channel_prompt")],
-                [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="back_to_main_menu")]
-            ]
-            
-            kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-            await query.message.edit_text(text, reply_markup=kb)
-        
+            channels_text = get_text('no_channels', language)
+
+        buttons = [
+            [KeyboardButton(text=get_text('btn_add_channel', language))],
+            [KeyboardButton(text=get_text('btn_remove_channel', language))],
+            [KeyboardButton(text=get_text('btn_back', language))]
+        ]
+
+        kb = ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+        await message.answer(channels_text, reply_markup=kb)
         await state.set_state(UserStates.selecting_channel)
         
     except Exception as e:
         logger.error(f"Channels menu error: {e}")
-        await query.answer("❌ Xato yuz berdi", show_alert=True)
-
-@router.callback_query(F.data.startswith("view_channel_"))
-async def view_channel_callback(query: types.CallbackQuery, state: FSMContext):
-    """Kanal ma'lumotlarini ko'rsatish"""
-    try:
-        channel_id = query.data.replace("view_channel_", "")
-        user_id = query.from_user.id
-        user = await db.get_user(user_id)
-        language = user.get('language_code', 'uz') if user else 'uz'
-        
-        channel = await db.get_channel(int(channel_id))
-        if not channel:
-            await query.answer("❌ Kanal topilmadi", show_alert=True)
-            return
-        
-        channel_title = channel.get('channel_title', 'Nomalum')
-        channel_username = channel.get('channel_username', '—')
-        
-        text = f"""
-🔗 KANAL MA'LUMOTLARI
-
-📌 Nomi: {channel_title}
-👤 Username: {channel_username}
-
-Ushbu kanalda reaksiyalarni sozlash uchun tayyor.
-        """
-        
-        buttons = [
-            [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="back_to_channels")]
-        ]
-        
-        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-        await query.message.edit_text(text, reply_markup=kb)
-        
-    except Exception as e:
-        logger.error(f"View channel error: {e}")
-        await query.answer("❌ Xato yuz berdi", show_alert=True)
-
-@router.callback_query(F.data == "back_to_channels")
-async def back_to_channels_callback(query: types.CallbackQuery, state: FSMContext):
-    """Kanallar ro'yxatiga qaytarish"""
-    try:
-        user = await db.get_user(query.from_user.id)
-        language = user.get('language_code', 'uz') if user else 'uz'
-        
-        # Kanallar menyusiga qaytarish
-        all_channels = await db.get_all_channels()
-        
-        if all_channels:
-            text = "🔗 KANALLAR\n\nBir kanalni tanlang:"
-            
-            buttons = []
-            for channel in all_channels:
-                channel_id = channel.get('channel_id')
-                channel_title = channel.get('channel_title', 'Nomalum kanal')
-                buttons.append([
-                    InlineKeyboardButton(
-                        text=f"✓ {channel_title}",
-                        callback_data=f"view_channel_{channel_id}"
-                    )
-                ])
-            
-            buttons.append([
-                InlineKeyboardButton(text="➕ Kanal qo'shish", callback_data="add_channel_prompt")
-            ])
-
-            buttons.append([
-                InlineKeyboardButton(text="⬅️ Orqaga", callback_data="back_to_main_menu")
-            ])
-            
-            kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-            await query.message.edit_text(text, reply_markup=kb)
-        
-    except Exception as e:
-        logger.error(f"Back to channels error: {e}")
 
 # ============================================
 # GURUH REAKSIYALARI MENYUSI
 # ============================================
 
-async def handle_groups_menu(query: types.CallbackQuery, language: str, state: FSMContext):
-    """Guruh reaksiyalari menyusi - Faqat tanlash"""
+async def handle_groups_menu(message: types.Message, language: str, state: FSMContext):
+    """Guruh reaksiyalari menyusi"""
     try:
-        # Barcha guruhlarni olish
+        # Gather groups and show list
         all_groups = await db.get_all_groups()
-        
+
         if all_groups:
-            text = "👥 GURUHLAR\n\nBir guruhni tanlang:"
-            
-            buttons = []
-            for group in all_groups:
-                group_id = group.get('group_id')
-                group_title = group.get('group_title', 'Nomalum guruh')
-                buttons.append([
-                    InlineKeyboardButton(
-                        text=f"📌 {group_title}",
-                        callback_data=f"manage_group_{group_id}"
-                    )
-                ])
-            
-            buttons.append([
-                InlineKeyboardButton(text="➕ Guruh qo'shish", callback_data="add_group_prompt")
-            ])
-            buttons.append([
-                InlineKeyboardButton(text="⬅️ Orqaga", callback_data="back_to_main_menu")
-            ])
-            
-            kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-            await query.message.edit_text(text, reply_markup=kb)
+            lines = ["👥 Guruhlaringiz ro'yxati:\n"]
+            for idx, g in enumerate(all_groups, 1):
+                title = g.get('group_title', 'Nomalum guruh')
+                gid = g.get('group_id')
+                lines.append(f"{idx}. {title} ({gid})")
+
+            groups_text = "\n".join(lines) + "\n\n" + get_text('groups_menu', language)
         else:
-            text = "❌ Hali guruhlar qo'shilmagan\n\nBotni guruhga qo'shing va reaksiyalarni yoqing"
-            
-            buttons = [
-                [InlineKeyboardButton(text="➕ Guruh qo'shish", callback_data="add_group_prompt")],
-                [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="back_to_main_menu")]
-            ]
-            
-            kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-            await query.message.edit_text(text, reply_markup=kb)
-        
+            groups_text = get_text('no_channels', language)
+
+        buttons = [
+            [KeyboardButton(text=get_text('btn_reactions_on', language))],
+            [KeyboardButton(text=get_text('btn_reactions_off', language))],
+            [KeyboardButton(text=get_text('btn_select_reactions', language))],
+            [KeyboardButton(text=get_text('btn_back', language))]
+        ]
+
+        kb = ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+        await message.answer(groups_text, reply_markup=kb)
         await state.set_state(UserStates.manage_reactions)
         
     except Exception as e:
         logger.error(f"Groups menu error: {e}")
-        await query.answer("❌ Xato yuz berdi", show_alert=True)
-
-@router.callback_query(F.data.startswith("manage_group_"))
-async def manage_group_callback(query: types.CallbackQuery, state: FSMContext):
-    """Guruhni boshqarish"""
-    try:
-        group_id = query.data.replace("manage_group_", "")
-        user = await db.get_user(query.from_user.id)
-        language = user.get('language_code', 'uz') if user else 'uz'
-        
-        group = await db.get_group(int(group_id))
-        if not group:
-            await query.answer("❌ Guruh topilmadi", show_alert=True)
-            return
-        
-        group_title = group.get('group_title', 'Nomalum')
-        
-        text = f"""
-👥 GURUH: {group_title}
-
-Reaksiyalarni boshqarish:
-        """
-        
-        buttons = [
-            [InlineKeyboardButton(text="✅ Yoqish", callback_data=f"reactions_on_{group_id}")],
-            [InlineKeyboardButton(text="❌ O'chirish", callback_data=f"reactions_off_{group_id}")],
-            [InlineKeyboardButton(text="🎨 Emoji-larni tanlash", callback_data=f"select_emoji_{group_id}")],
-            [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="back_to_groups")]
-        ]
-        
-        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-        await query.message.edit_text(text, reply_markup=kb)
-        
-    except Exception as e:
-        logger.error(f"Manage group error: {e}")
-        await query.answer("❌ Xato yuz berdi", show_alert=True)
-
-@router.callback_query(F.data == "back_to_groups")
-async def back_to_groups_callback(query: types.CallbackQuery, state: FSMContext):
-    """Guruhlar ro'yxatiga qaytarish"""
-    try:
-        user = await db.get_user(query.from_user.id)
-        language = user.get('language_code', 'uz') if user else 'uz'
-        
-        # Guruhlar menyusiga qaytarish
-        all_groups = await db.get_all_groups()
-        
-        if all_groups:
-            text = "👥 GURUHLAR\n\nBir guruhni tanlang:"
-            
-            buttons = []
-            for group in all_groups:
-                group_id = group.get('group_id')
-                group_title = group.get('group_title', 'Nomalum guruh')
-                buttons.append([
-                    InlineKeyboardButton(
-                        text=f"📌 {group_title}",
-                        callback_data=f"manage_group_{group_id}"
-                    )
-                ])
-            
-            buttons.append([
-                InlineKeyboardButton(text="⬅️ Orqaga", callback_data="back_to_main_menu")
-            ])
-            
-            kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-            await query.message.edit_text(text, reply_markup=kb)
-        
-    except Exception as e:
-        logger.error(f"Back to groups error: {e}")
 
 # ============================================
 # QOLLANMA
 # ============================================
 
-async def handle_guide(query: types.CallbackQuery, language: str):
+async def handle_guide(message: types.Message, language: str):
     """Qo'llanma ko'rsatish"""
-    try:
-        guides = {
-            'uz': """
+    guides = {
+        'uz': """
 📖 QOLLANMA
 
-🤖 BOT HAQIDA:
-Reaksiyalar Bot - Telegram guruhlaringizda emoji reaksiyalarini yoqish uchun bot.
+/reaksiya - Guruhda reaksiyalarni yoqish
+/reaksiya_on - Reaksiyalarni yoqish
+/reaksiya_off - Reaksiyalarni o'chirish
+/settings - Sozlamalar
 
-📌 KANALLAR:
-Barcha mavjud kanallarni ko'rish va boshqarish
-
-👥 GURUHLAR:
-Guruhlaringizda reaksiyalarni sozlash
-
-🎨 EMOJI-LAR:
-70+ emoji reaksiyalari mavjud
-
-✨ PREMIUM:
-Qo'shimcha emoji va funksiyalar uchun
-            """,
-            'en': """
+🎯 Reaksiyalar botdan foydalanish:
+1. Botni guruhga qo'shing
+2. Xabarlarning ostiga reaksiya emoji-lari chiqadi
+3. Foydalanuvchilar emoji-larni bosib reaksiya berishi mumkin
+        """,
+        'en': """
 📖 GUIDE
 
-🤖 ABOUT BOT:
-Reactions Bot - Add emoji reactions to your Telegram groups.
+/reaction - Enable reactions in group
+/reaction_on - Turn on reactions
+/reaction_off - Turn off reactions
+/settings - Settings
 
-📌 CHANNELS:
-View and manage all available channels
-
-👥 GROUPS:
-Configure reactions in your groups
-
-🎨 EMOJIS:
-70+ emoji reactions available
-
-✨ PREMIUM:
-Extra emojis and features
-            """,
-            'ru': """
+🎯 How to use Reactions Bot:
+1. Add the bot to your group
+2. Reaction emojis will appear below messages
+3. Users can click on emojis to react
+        """,
+        'ru': """
 📖 РУКОВОДСТВО
 
-🤖 О БОТЕ:
-Reactions Bot - Добавьте эмоджи реакции в ваши Telegram группы.
+/reaction - Включить реакции в группе
+/reaction_on - Включить реакции
+/reaction_off - Отключить реакции
+/settings - Настройки
 
-📌 КАНАЛЫ:
-Просмотр и управление всеми доступными каналами
-
-👥 ГРУППЫ:
-Настройка реакций в ваших группах
-
-🎨 ЭМОДЖИ:
-70+ эмоджи реакций доступно
-
-✨ ПРЕМИУМ:
-Дополнительные эмоджи и функции
-            """
-        }
-        
-        guide_text = guides.get(language, guides['uz'])
-        
-        buttons = [
-            [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="back_to_main_menu")]
-        ]
-        
-        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-        await query.message.edit_text(guide_text, reply_markup=kb)
-        
-    except Exception as e:
-        logger.error(f"Guide error: {e}")
-        await query.answer("❌ Xato yuz berdi", show_alert=True)
+🎯 Как использовать бота реакций:
+1. Добавьте бота в вашу группу
+2. Эмодзи реакций появятся под сообщениями
+3. Пользователи смогут нажимать на эмодзи, чтобы реагировать
+        """
+    }
+    
+    guide_text = guides.get(language, guides['uz'])
+    user = await db.get_user(message.from_user.id)
+    lang = user.get('language_code', 'uz') if user else 'uz'
+    
+    await message.answer(guide_text, reply_markup=get_main_menu_keyboard(lang))
 
 # ============================================
-# STATISTIKA (OLIB TASHLANDI - FOYDALANUVCHILARGA KERAK EMASá)
+# STATISTIKA
 # ============================================
 
-async def handle_statistics(query: types.CallbackQuery, language: str):
-    """DEPRECATED - Statistika (foydalanuvchilarga kerak emas)"""
-    pass
-
-# ============================================
-# BACK TO MAIN MENU
-# ============================================
-
-@router.callback_query(F.data == "back_to_main_menu")
-async def back_to_main_menu_callback(query: types.CallbackQuery, state: FSMContext):
-    """Bosh menyuga qaytarish"""
+async def handle_statistics(message: types.Message, language: str):
+    """Statistika ko'rsatish"""
     try:
-        user_id = query.from_user.id
-        user = await db.get_user(user_id)
+        stats = await db.get_statistics()
         
-        if not user:
-            await query.answer("❌ Foydalanuvchi topilmadi", show_alert=True)
-            return
-        
-        language = user.get('language_code', 'uz')
-        
-        await state.clear()
-        await query.message.edit_text(
-            "🎉 Asosiy menyu",
-            reply_markup=get_main_menu_keyboard(language)
+        stats_text = get_text('statistics', language,
+            total_users=stats.get('total_users', 0),
+            total_groups=stats.get('total_groups', 0),
+            total_channels=stats.get('total_channels', 0),
+            daily_new_users=stats.get('daily_new_users', 0)
         )
         
+        await message.answer(stats_text, reply_markup=get_main_menu_keyboard(language))
+        
     except Exception as e:
-        logger.error(f"Back to main menu error: {e}")
-        await query.answer("❌ Xato yuz berdi", show_alert=True)
+        logger.error(f"Statistics error: {e}")
+        await message.answer(get_text('error', language))
 
 # ============================================
 # ASOSIY ROUTER
