@@ -1,7 +1,8 @@
 {
   "welcome": "👋 Hello! I'm a <b>#reaction</b> bot — I automatically react to messages in channels and groups ✅\n\nHow would you like to use the bot?",
-  "choose_lang": "🌐 Choose language:",
+  "choose_lang": "Choose language:",
   "lang_set": "✅ Language changed!",
+  "your_id": "Your ID number: <code>{id}</code>",
   "choose_type": "How would you like to use the bot?",
   "btn_channel": "📢 FOR CHANNEL",
   "btn_group": "👥 FOR GROUP",

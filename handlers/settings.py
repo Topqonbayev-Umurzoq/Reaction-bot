@@ -31,7 +31,7 @@ async def set_lang(call: CallbackQuery):
     new_lang = get_user_lang(call.from_user.id)
     await call.answer(t(new_lang, "lang_set"), show_alert=True)
     await call.message.edit_text(
-        t(new_lang, "welcome"),
+        f"{t(new_lang, 'welcome')}\n\n{t(new_lang, 'your_id').format(id=call.from_user.id)}",
         reply_markup=main_menu_kb(new_lang),
         parse_mode="HTML"
     )

@@ -3,7 +3,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart, Command
 import json, os
 
-from database import add_user, get_user_lang, is_blocked, get_all_channels_by_user, get_all_groups_by_user
+from database import get_user, add_user, get_user_lang, is_blocked, get_all_channels_by_user, get_all_groups_by_user
 from keyboards.inline import main_menu_kb, channels_kb, groups_kb, lang_kb
 
 router = Router()
@@ -18,7 +18,16 @@ def t(lang, key):
 @router.message(CommandStart())
 async def cmd_start(msg: Message):
     user = msg.from_user
-    add_user(user.id, user.username, user.full_name)
+    existing_user = get_user(user.id)
+
+    if not existing_user:
+        add_user(user.id, user.username, user.full_name)
+        await msg.answer(
+            t("uz", "choose_lang"),
+            reply_markup=lang_kb(),
+            parse_mode="HTML"
+        )
+        return
 
     if is_blocked(user.id):
         await msg.answer("❌ Siz bloklandingiz.")
@@ -26,7 +35,7 @@ async def cmd_start(msg: Message):
 
     lang = get_user_lang(user.id)
     await msg.answer(
-        t(lang, "welcome"),
+        f"{t(lang, 'welcome')}\n\n{t(lang, 'your_id').format(id=user.id)}",
         reply_markup=main_menu_kb(lang),
         parse_mode="HTML"
     )

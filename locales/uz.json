@@ -1,7 +1,8 @@
 {
   "welcome": "👋 Salom! Men <b>#reaksiya</b> bosadigan botman — kanal yoki guruhlarda reaksiya bosaman ✅\n\nBotdan qay maqsadda foydalanmoqchisiz?",
-  "choose_lang": "🌐 Tilni tanlang:",
+  "choose_lang": "Til tanlang:",
   "lang_set": "✅ Til o'zgartirildi!",
+  "your_id": "Sizning ID raqamingiz: <code>{id}</code>",
   "choose_type": "Botdan qay maqsadda foydalanmoqchisiz?",
   "btn_channel": "📢 KANAL UCHUN",
   "btn_group": "👥 GURUH UCHUN",

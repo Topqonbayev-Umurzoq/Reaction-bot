@@ -20,11 +20,9 @@ def main_menu_kb(lang="uz"):
 # Til tanlash klaviaturasi
 def lang_kb():
     kb = InlineKeyboardBuilder()
-    kb.row(
-        InlineKeyboardButton(text="🇺🇿 O'zbek", callback_data="setlang_uz"),
-        InlineKeyboardButton(text="🇷🇺 Русский", callback_data="setlang_ru"),
-        InlineKeyboardButton(text="🇬🇧 English", callback_data="setlang_en"),
-    )
+    kb.row(InlineKeyboardButton(text="🇺🇿 O'zbek", callback_data="setlang_uz"))
+    kb.row(InlineKeyboardButton(text="🇬🇧 English", callback_data="setlang_en"))
+    kb.row(InlineKeyboardButton(text="🇷🇺 Русский", callback_data="setlang_ru"))
     return kb.as_markup()
 
 # Obuna tugmasi
