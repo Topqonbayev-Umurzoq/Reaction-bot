@@ -111,6 +111,23 @@ def is_blocked(user_id):
     conn.close()
     return bool(row and row[0])
 
+
+def get_all_blocked_users():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('SELECT user_id, username, full_name FROM users WHERE is_blocked = 1')
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+
+def unblock_all_users():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('UPDATE users SET is_blocked = 0')
+    conn.commit()
+    conn.close()
+
 # --- Guruh funksiyalari ---
 
 def add_group(chat_id, title, added_by):

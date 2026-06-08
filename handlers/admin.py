@@ -9,7 +9,8 @@ from aiogram.types import InlineKeyboardButton
 from config import ADMIN_ID
 from database import (
     get_all_users, block_user, unblock_user, is_blocked,
-    add_admin, get_admins, is_admin_user, remove_admin, remove_all_admins
+    add_admin, get_admins, is_admin_user, remove_admin, remove_all_admins,
+    get_all_blocked_users, unblock_all_users
 )
 from keyboards.inline import admin_kb, back_kb
 
@@ -21,6 +22,7 @@ class AdminState(StatesGroup):
     waiting_unblock_id = State()
     waiting_add_admin = State()
     waiting_remove_admin = State()
+    waiting_unblock_blocked = State()
 
 
 
@@ -350,6 +352,113 @@ async def admin_remove_all_confirm(call: CallbackQuery):
     remove_all_admins()
     await call.message.edit_text(
         "✅ Barcha adminlar adminlikdan olib tashlandi.", 
+        reply_markup=back_kb("admin_back"), 
+        parse_mode="HTML"
+    )
+
+
+# Bloklangan foydalanuvchilar ro'yxati
+@router.callback_query(F.data == "admin_view_blocked")
+async def admin_view_blocked(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return
+    if is_blocked(call.from_user.id):
+        await call.answer("❌ Siz bloklandingiz.")
+        return
+    
+    blocked_users = get_all_blocked_users()
+    text = "📋 <b>Bloklangan foydalanuvchilar</b>\n\n"
+    
+    kb = back_kb("admin_back")
+    
+    if not blocked_users:
+        text += "Hozircha bloklangan foydalanuvchi yo'q."
+    else:
+        text += f"Jami: {len(blocked_users)} ta\n\n"
+        for user_id, username, full_name in blocked_users:
+            uname_str = f"@{username}" if username else "—"
+            text += f"• <code>{user_id}</code> | {full_name} ({uname_str})\n"
+        
+        kb = InlineKeyboardBuilder()
+        kb.row(InlineKeyboardButton(text="🗑️ Foydalanuvchi olib tashlash", callback_data="admin_unblock_select"))
+        kb.row(InlineKeyboardButton(text="🗑️🗑️ Barcha bloklanganlarni olib tashlash", callback_data="admin_unblock_all"))
+        kb.row(InlineKeyboardButton(text="↩️ Orqaga", callback_data="admin_back"))
+        kb = kb.as_markup()
+
+    await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+
+
+# Bloklangan foydalanuvchi olib tashlashni tanlash
+@router.callback_query(F.data == "admin_unblock_select")
+async def admin_unblock_select(call: CallbackQuery, state: FSMContext):
+    if not is_admin(call.from_user.id):
+        return
+    if is_blocked(call.from_user.id):
+        await call.answer("❌ Siz bloklandingiz.")
+        return
+    await state.set_state(AdminState.waiting_unblock_blocked)
+    await call.message.edit_text(
+        "🗑️ <b>Blokdan chiqarish</b>\n\nFoydalanuvchi ID sini kiriting:\n\n(Bekor qilish uchun /cancel)",
+        reply_markup=back_kb("admin_view_blocked"),
+        parse_mode="HTML"
+    )
+
+
+@router.message(AdminState.waiting_unblock_blocked)
+async def admin_unblock_blocked_do(msg: Message, state: FSMContext):
+    if not is_admin(msg.from_user.id):
+        return
+    if is_blocked(msg.from_user.id):
+        await msg.answer("❌ Siz bloklandingiz.")
+        await state.clear()
+        return
+    await state.clear()
+    try:
+        uid = int(msg.text.strip())
+        if is_blocked(uid):
+            unblock_user(uid)
+            await msg.answer(f"✅ {uid} blokdan chiqarildi.")
+        else:
+            await msg.answer("❌ Bu foydalanuvchi bloklangan emas.")
+    except ValueError:
+        await msg.answer("❌ Noto'g'ri ID!")
+
+
+# Barcha bloklanganlarni olib tashlashni tasdiqlash
+@router.callback_query(F.data == "admin_unblock_all")
+async def admin_unblock_all(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return
+    if is_blocked(call.from_user.id):
+        await call.answer("❌ Siz bloklandingiz.")
+        return
+    
+    blocked_users = get_all_blocked_users()
+    if not blocked_users:
+        await call.answer("❌ Olib tashlanadigan foydalanuvchi yo'q.")
+        return
+    
+    text = f"⚠️ <b>Tasdiqla</b>\n\n{len(blocked_users)} ta foydalanuvchini barcha blokdan chiqarish?"
+    
+    kb = InlineKeyboardBuilder()
+    kb.row(
+        InlineKeyboardButton(text="✅ Tasdiqla", callback_data="admin_unblock_all_confirm"),
+        InlineKeyboardButton(text="❌ Bekor", callback_data="admin_view_blocked")
+    )
+    
+    await call.message.edit_text(text, reply_markup=kb.as_markup(), parse_mode="HTML")
+
+
+@router.callback_query(F.data == "admin_unblock_all_confirm")
+async def admin_unblock_all_confirm(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return
+    if is_blocked(call.from_user.id):
+        await call.answer("❌ Siz bloklandingiz.")
+        return
+    unblock_all_users()
+    await call.message.edit_text(
+        "✅ Barcha bloklangan foydalanuvchilar blokdan chiqarildi.", 
         reply_markup=back_kb("admin_back"), 
         parse_mode="HTML"
     )
