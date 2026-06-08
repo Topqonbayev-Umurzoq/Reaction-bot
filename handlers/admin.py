@@ -8,7 +8,7 @@ from aiogram.types import InlineKeyboardButton
 
 from config import ADMIN_ID
 from database import (
-    get_all_users, block_user, unblock_user,
+    get_all_users, block_user, unblock_user, is_blocked,
     add_admin, get_admins, is_admin_user, remove_admin, remove_all_admins
 )
 from keyboards.inline import admin_kb, back_kb
@@ -37,6 +37,9 @@ def is_admin(user_id):
 async def cmd_admin(msg: Message):
     if not is_admin(msg.from_user.id):
         return
+    if is_blocked(msg.from_user.id):
+        await msg.answer("❌ Siz bloklandingiz.")
+        return
     is_root = is_root_admin(msg.from_user.id)
     extra = f"\n\n<b>Hozirgi ID:</b> <code>{msg.from_user.id}</code>"
     if is_root:
@@ -55,6 +58,9 @@ async def cmd_admin(msg: Message):
 @router.callback_query(F.data == "admin_users")
 async def admin_users(call: CallbackQuery):
     if not is_admin(call.from_user.id):
+        return
+    if is_blocked(call.from_user.id):
+        await call.answer("❌ Siz bloklandingiz.")
         return
     users = get_all_users()
     if not users:
@@ -75,6 +81,9 @@ async def admin_users(call: CallbackQuery):
 @router.callback_query(F.data == "admin_stats")
 async def admin_stats(call: CallbackQuery):
     if not is_admin(call.from_user.id):
+        return
+    if is_blocked(call.from_user.id):
+        await call.answer("❌ Siz bloklandingiz.")
         return
     from database import get_conn
     conn = get_conn()
@@ -104,6 +113,9 @@ async def admin_stats(call: CallbackQuery):
 async def admin_broadcast_start(call: CallbackQuery, state: FSMContext):
     if not is_admin(call.from_user.id):
         return
+    if is_blocked(call.from_user.id):
+        await call.answer("❌ Siz bloklandingiz.")
+        return
     await state.set_state(AdminState.waiting_broadcast)
     await call.message.edit_text(
         "📨 Barcha foydalanuvchilarga yuboriladigan xabarni kiriting:\n\n(Bekor qilish uchun /cancel)",
@@ -114,6 +126,10 @@ async def admin_broadcast_start(call: CallbackQuery, state: FSMContext):
 @router.message(AdminState.waiting_broadcast)
 async def admin_broadcast_send(msg: Message, state: FSMContext, bot: Bot):
     if not is_admin(msg.from_user.id):
+        return
+    if is_blocked(msg.from_user.id):
+        await msg.answer("❌ Siz bloklandingiz.")
+        await state.clear()
         return
     await state.clear()
     users = get_all_users()
@@ -135,6 +151,9 @@ async def admin_broadcast_send(msg: Message, state: FSMContext, bot: Bot):
 async def admin_block_start(call: CallbackQuery, state: FSMContext):
     if not is_admin(call.from_user.id):
         return
+    if is_blocked(call.from_user.id):
+        await call.answer("❌ Siz bloklandingiz.")
+        return
     await state.set_state(AdminState.waiting_block_id)
     await call.message.edit_text(
         "🚫 Bloklash uchun foydalanuvchi ID sini kiriting:",
@@ -145,6 +164,10 @@ async def admin_block_start(call: CallbackQuery, state: FSMContext):
 @router.message(AdminState.waiting_block_id)
 async def admin_block_do(msg: Message, state: FSMContext):
     if not is_admin(msg.from_user.id):
+        return
+    if is_blocked(msg.from_user.id):
+        await msg.answer("❌ Siz bloklandingiz.")
+        await state.clear()
         return
     await state.clear()
     try:
@@ -160,6 +183,9 @@ async def admin_block_do(msg: Message, state: FSMContext):
 async def admin_unblock_start(call: CallbackQuery, state: FSMContext):
     if not is_admin(call.from_user.id):
         return
+    if is_blocked(call.from_user.id):
+        await call.answer("❌ Siz bloklandingiz.")
+        return
     await state.set_state(AdminState.waiting_unblock_id)
     await call.message.edit_text(
         "✅ Blokdan chiqarish uchun foydalanuvchi ID sini kiriting:",
@@ -170,6 +196,10 @@ async def admin_unblock_start(call: CallbackQuery, state: FSMContext):
 @router.message(AdminState.waiting_unblock_id)
 async def admin_unblock_do(msg: Message, state: FSMContext):
     if not is_admin(msg.from_user.id):
+        return
+    if is_blocked(msg.from_user.id):
+        await msg.answer("❌ Siz bloklandingiz.")
+        await state.clear()
         return
     await state.clear()
     try:
@@ -185,6 +215,9 @@ async def admin_unblock_do(msg: Message, state: FSMContext):
 async def admin_add_start(call: CallbackQuery, state: FSMContext):
     if not is_root_admin(call.from_user.id):
         return
+    if is_blocked(call.from_user.id):
+        await call.answer("❌ Siz bloklandingiz.")
+        return
     await state.set_state(AdminState.waiting_add_admin)
     await call.message.edit_text(
         "➕ Admin qo'shish uchun foydalanuvchi ID sini kiriting:\n\n(Bekor qilish uchun /cancel)",
@@ -195,6 +228,10 @@ async def admin_add_start(call: CallbackQuery, state: FSMContext):
 @router.message(AdminState.waiting_add_admin)
 async def admin_add_do(msg: Message, state: FSMContext):
     if not is_root_admin(msg.from_user.id):
+        return
+    if is_blocked(msg.from_user.id):
+        await msg.answer("❌ Siz bloklandingiz.")
+        await state.clear()
         return
     await state.clear()
     try:
@@ -216,6 +253,9 @@ async def admin_add_do(msg: Message, state: FSMContext):
 async def admin_admins(call: CallbackQuery):
     if not is_admin(call.from_user.id):
         return
+    if is_blocked(call.from_user.id):
+        await call.answer("❌ Siz bloklandingiz.")
+        return
     admins = get_admins()
     text = "👑 <b>Adminlar ro'yxati</b>\n\n"
     text += f"🧑‍💼 Asosiy admin: <code>{ADMIN_ID}</code>\n\n"
@@ -235,6 +275,7 @@ async def admin_admins(call: CallbackQuery):
             kb.row(InlineKeyboardButton(text="🗑️ Admin olib tashlash", callback_data="admin_remove_select"))
             kb.row(InlineKeyboardButton(text="🗑️🗑️ Barcha adminlarni olib tashlash", callback_data="admin_remove_all"))
             kb.row(InlineKeyboardButton(text="↩️ Orqaga", callback_data="admin_back"))
+            kb = kb.as_markup()
 
     await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
 
@@ -243,6 +284,9 @@ async def admin_admins(call: CallbackQuery):
 @router.callback_query(F.data == "admin_remove_select")
 async def admin_remove_select(call: CallbackQuery, state: FSMContext):
     if not is_root_admin(call.from_user.id):
+        return
+    if is_blocked(call.from_user.id):
+        await call.answer("❌ Siz bloklandingiz.")
         return
     await state.set_state(AdminState.waiting_remove_admin)
     await call.message.edit_text(
@@ -255,6 +299,10 @@ async def admin_remove_select(call: CallbackQuery, state: FSMContext):
 @router.message(AdminState.waiting_remove_admin)
 async def admin_remove_do(msg: Message, state: FSMContext):
     if not is_root_admin(msg.from_user.id):
+        return
+    if is_blocked(msg.from_user.id):
+        await msg.answer("❌ Siz bloklandingiz.")
+        await state.clear()
         return
     await state.clear()
     try:
@@ -273,6 +321,9 @@ async def admin_remove_do(msg: Message, state: FSMContext):
 async def admin_remove_all(call: CallbackQuery):
     if not is_root_admin(call.from_user.id):
         return
+    if is_blocked(call.from_user.id):
+        await call.answer("❌ Siz bloklandingiz.")
+        return
     admins = get_admins()
     if not admins:
         await call.answer("❌ Olib tashlanadigan admin yo'q.")
@@ -286,12 +337,15 @@ async def admin_remove_all(call: CallbackQuery):
         InlineKeyboardButton(text="❌ Bekor", callback_data="admin_admins")
     )
     
-    await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    await call.message.edit_text(text, reply_markup=kb.as_markup(), parse_mode="HTML")
 
 
 @router.callback_query(F.data == "admin_remove_all_confirm")
 async def admin_remove_all_confirm(call: CallbackQuery):
     if not is_root_admin(call.from_user.id):
+        return
+    if is_blocked(call.from_user.id):
+        await call.answer("❌ Siz bloklandingiz.")
         return
     remove_all_admins()
     await call.message.edit_text(
@@ -306,6 +360,9 @@ async def admin_remove_all_confirm(call: CallbackQuery):
 async def admin_sub(call: CallbackQuery):
     if not is_admin(call.from_user.id):
         return
+    if is_blocked(call.from_user.id):
+        await call.answer("❌ Siz bloklandingiz.")
+        return
     await call.message.edit_text(
         "➕ <b>Majburiy obuna</b>\n\nBu funksiya tez orada qo'shiladi.",
         reply_markup=back_kb("admin_back"),
@@ -317,6 +374,9 @@ async def admin_sub(call: CallbackQuery):
 @router.callback_query(F.data == "admin_back")
 async def admin_back(call: CallbackQuery):
     if not is_admin(call.from_user.id):
+        return
+    if is_blocked(call.from_user.id):
+        await call.answer("❌ Siz bloklandingiz.")
         return
     await call.message.edit_text(
         "👨‍💼 <b>Admin Panel</b>",
