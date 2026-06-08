@@ -3,11 +3,13 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import InlineKeyboardButton
 
 from config import ADMIN_ID
 from database import (
     get_all_users, block_user, unblock_user,
-    add_admin, get_admins, is_admin_user
+    add_admin, get_admins, is_admin_user, remove_admin, remove_all_admins
 )
 from keyboards.inline import admin_kb, back_kb
 
@@ -18,6 +20,8 @@ class AdminState(StatesGroup):
     waiting_block_id = State()
     waiting_unblock_id = State()
     waiting_add_admin = State()
+    waiting_remove_admin = State()
+
 
 
 def is_root_admin(user_id):
@@ -215,13 +219,86 @@ async def admin_admins(call: CallbackQuery):
     admins = get_admins()
     text = "👑 <b>Adminlar ro'yxati</b>\n\n"
     text += f"🧑‍💼 Asosiy admin: <code>{ADMIN_ID}</code>\n\n"
+    
+    kb = back_kb("admin_back")
+    
     if not admins:
         text += "Hozircha boshqa adminlar yo'q."
     else:
+        text += "Boshqa adminlar:\n\n"
         for user_id, added_by, added_at in admins:
             text += f"ID: <code>{user_id}</code> | qo'shgan: <code>{added_by}</code> | {added_at}\n"
+        
+        # Agar bosh admin bo'lsa, adminlarni olib tashlash tugmasini ko'rsatamiz
+        if is_root_admin(call.from_user.id) and len(admins) > 0:
+            kb = InlineKeyboardBuilder()
+            kb.row(InlineKeyboardButton(text="🗑️ Admin olib tashlash", callback_data="admin_remove_select"))
+            kb.row(InlineKeyboardButton(text="🗑️🗑️ Barcha adminlarni olib tashlash", callback_data="admin_remove_all"))
+            kb.row(InlineKeyboardButton(text="↩️ Orqaga", callback_data="admin_back"))
 
-    await call.message.edit_text(text, reply_markup=back_kb("admin_back"), parse_mode="HTML")
+    await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+
+
+# Admin olib tashlashni tanlash
+@router.callback_query(F.data == "admin_remove_select")
+async def admin_remove_select(call: CallbackQuery, state: FSMContext):
+    if not is_root_admin(call.from_user.id):
+        return
+    await state.set_state(AdminState.waiting_remove_admin)
+    await call.message.edit_text(
+        "🗑️ <b>Adminlikdan olib tashlash</b>\n\nAdmin ID sini kiriting:\n\n(Bekor qilish uchun /cancel)",
+        reply_markup=back_kb("admin_admins"),
+        parse_mode="HTML"
+    )
+
+
+@router.message(AdminState.waiting_remove_admin)
+async def admin_remove_do(msg: Message, state: FSMContext):
+    if not is_root_admin(msg.from_user.id):
+        return
+    await state.clear()
+    try:
+        uid = int(msg.text.strip())
+        if is_admin_user(uid):
+            remove_admin(uid)
+            await msg.answer(f"✅ {uid} adminlikdan olib tashlandi.")
+        else:
+            await msg.answer("❌ Bu foydalanuvchi admin emas.")
+    except ValueError:
+        await msg.answer("❌ Noto'g'ri ID!")
+
+
+# Barcha adminlarni olib tashlashni tasdiqlash
+@router.callback_query(F.data == "admin_remove_all")
+async def admin_remove_all(call: CallbackQuery):
+    if not is_root_admin(call.from_user.id):
+        return
+    admins = get_admins()
+    if not admins:
+        await call.answer("❌ Olib tashlanadigan admin yo'q.")
+        return
+    
+    text = f"⚠️ <b>Tasdiqla</b>\n\n{len(admins)} ta adminni barcha adminlikdan olib tashlash?"
+    
+    kb = InlineKeyboardBuilder()
+    kb.row(
+        InlineKeyboardButton(text="✅ Tasdiqla", callback_data="admin_remove_all_confirm"),
+        InlineKeyboardButton(text="❌ Bekor", callback_data="admin_admins")
+    )
+    
+    await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "admin_remove_all_confirm")
+async def admin_remove_all_confirm(call: CallbackQuery):
+    if not is_root_admin(call.from_user.id):
+        return
+    remove_all_admins()
+    await call.message.edit_text(
+        "✅ Barcha adminlar adminlikdan olib tashlandi.", 
+        reply_markup=back_kb("admin_back"), 
+        parse_mode="HTML"
+    )
 
 
 # Majburiy obuna

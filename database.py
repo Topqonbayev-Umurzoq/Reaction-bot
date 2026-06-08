@@ -204,6 +204,22 @@ def is_admin_user(user_id):
     return bool(row)
 
 
+def remove_admin(user_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('DELETE FROM admins WHERE user_id = ?', (user_id,))
+    conn.commit()
+    conn.close()
+
+
+def remove_all_admins():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('DELETE FROM admins')
+    conn.commit()
+    conn.close()
+
+
 def get_all_channels_by_user(user_id):
     conn = get_conn()
     c = conn.cursor()
