@@ -9,6 +9,8 @@
   "btn_back": "↩️ Orqaga",
   "btn_add_channel": "➕ Kanal qo'shish",
   "btn_add_group": "➕ Guruh qo'shish",
+  "sub_required": "🔒 Botdan foydalanish uchun avval {channel} kanaliga obuna bo‘ling va keyin /start yuboring.",
+  "subscribe_button": "Kanalga obuna bo‘lish",
   "channel_list": "📋 Kanallaringiz ro'yxati:\n\nQuyidagi kanalingizga avto reaksiyalarni sozlashingiz mumkin",
   "group_list": "📋 Guruhlaringiz ro'yxati:",
   "no_channels": "Sizda hali kanal yo'q. Kanal qo'shing 👇",

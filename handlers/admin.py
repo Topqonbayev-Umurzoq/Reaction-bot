@@ -5,7 +5,10 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from config import ADMIN_ID
-from database import get_all_users, block_user, unblock_user, get_user
+from database import (
+    get_all_users, block_user, unblock_user,
+    add_admin, get_admins, is_admin_user
+)
 from keyboards.inline import admin_kb, back_kb
 
 router = Router()
@@ -14,20 +17,35 @@ class AdminState(StatesGroup):
     waiting_broadcast = State()
     waiting_block_id = State()
     waiting_unblock_id = State()
+    waiting_add_admin = State()
+
+
+def is_root_admin(user_id):
+    return user_id == ADMIN_ID
+
 
 def is_admin(user_id):
-    return user_id == ADMIN_ID
+    return user_id == ADMIN_ID or is_admin_user(user_id)
+
 
 # /admin buyrug'i
 @router.message(Command("admin"))
 async def cmd_admin(msg: Message):
     if not is_admin(msg.from_user.id):
         return
+    is_root = is_root_admin(msg.from_user.id)
+    extra = f"\n\n<b>Hozirgi ID:</b> <code>{msg.from_user.id}</code>"
+    if is_root:
+        extra += "\n<b>Siz bosh admin hisoblanasiz.</b>"
+    else:
+        extra += "\nSiz admin sifatida ishlayapsiz."
+
     await msg.answer(
-        "👨‍💼 <b>Admin Panel</b>",
-        reply_markup=admin_kb(),
+        "👨‍💼 <b>Admin Panel</b>" + extra,
+        reply_markup=admin_kb(is_root=is_root),
         parse_mode="HTML"
     )
+
 
 # Foydalanuvchilar ro'yxati
 @router.callback_query(F.data == "admin_users")
@@ -47,6 +65,7 @@ async def admin_users(call: CallbackQuery):
         text += f"{status} <b>{name}</b> ({uname_str})\nID: <code>{uid}</code> | Til: {lang}\n\n"
 
     await call.message.edit_text(text, reply_markup=back_kb("admin_back"), parse_mode="HTML")
+
 
 # Statistika
 @router.callback_query(F.data == "admin_stats")
@@ -75,6 +94,7 @@ async def admin_stats(call: CallbackQuery):
     )
     await call.message.edit_text(text, reply_markup=back_kb("admin_back"), parse_mode="HTML")
 
+
 # Xabar yuborish (broadcast)
 @router.callback_query(F.data == "admin_broadcast")
 async def admin_broadcast_start(call: CallbackQuery, state: FSMContext):
@@ -85,6 +105,7 @@ async def admin_broadcast_start(call: CallbackQuery, state: FSMContext):
         "📨 Barcha foydalanuvchilarga yuboriladigan xabarni kiriting:\n\n(Bekor qilish uchun /cancel)",
         reply_markup=back_kb("admin_back")
     )
+
 
 @router.message(AdminState.waiting_broadcast)
 async def admin_broadcast_send(msg: Message, state: FSMContext, bot: Bot):
@@ -104,6 +125,7 @@ async def admin_broadcast_send(msg: Message, state: FSMContext, bot: Bot):
             fail += 1
     await msg.answer(f"✅ Yuborildi: {success} ta\n❌ Xato: {fail} ta")
 
+
 # Bloklash
 @router.callback_query(F.data == "admin_block")
 async def admin_block_start(call: CallbackQuery, state: FSMContext):
@@ -114,6 +136,7 @@ async def admin_block_start(call: CallbackQuery, state: FSMContext):
         "🚫 Bloklash uchun foydalanuvchi ID sini kiriting:",
         reply_markup=back_kb("admin_back")
     )
+
 
 @router.message(AdminState.waiting_block_id)
 async def admin_block_do(msg: Message, state: FSMContext):
@@ -127,6 +150,7 @@ async def admin_block_do(msg: Message, state: FSMContext):
     except ValueError:
         await msg.answer("❌ Noto'g'ri ID!")
 
+
 # Blokdan chiqarish
 @router.callback_query(F.data == "admin_unblock")
 async def admin_unblock_start(call: CallbackQuery, state: FSMContext):
@@ -137,6 +161,7 @@ async def admin_unblock_start(call: CallbackQuery, state: FSMContext):
         "✅ Blokdan chiqarish uchun foydalanuvchi ID sini kiriting:",
         reply_markup=back_kb("admin_back")
     )
+
 
 @router.message(AdminState.waiting_unblock_id)
 async def admin_unblock_do(msg: Message, state: FSMContext):
@@ -150,6 +175,55 @@ async def admin_unblock_do(msg: Message, state: FSMContext):
     except ValueError:
         await msg.answer("❌ Noto'g'ri ID!")
 
+
+# Admin qo'shish
+@router.callback_query(F.data == "admin_add")
+async def admin_add_start(call: CallbackQuery, state: FSMContext):
+    if not is_root_admin(call.from_user.id):
+        return
+    await state.set_state(AdminState.waiting_add_admin)
+    await call.message.edit_text(
+        "➕ Admin qo'shish uchun foydalanuvchi ID sini kiriting:\n\n(Bekor qilish uchun /cancel)",
+        reply_markup=back_kb("admin_back")
+    )
+
+
+@router.message(AdminState.waiting_add_admin)
+async def admin_add_do(msg: Message, state: FSMContext):
+    if not is_root_admin(msg.from_user.id):
+        return
+    await state.clear()
+    try:
+        uid = int(msg.text.strip())
+        if uid == ADMIN_ID:
+            await msg.answer("✅ Bu ID bosh adminga tegishli.")
+            return
+        if is_admin_user(uid):
+            await msg.answer("❌ Bu foydalanuvchi allaqachon admin.")
+            return
+        add_admin(uid, msg.from_user.id)
+        await msg.answer(f"✅ {uid} yangi admin sifatida qo'shildi.")
+    except ValueError:
+        await msg.answer("❌ Noto'g'ri ID!")
+
+
+# Adminlar ro'yxati
+@router.callback_query(F.data == "admin_admins")
+async def admin_admins(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return
+    admins = get_admins()
+    text = "👑 <b>Adminlar ro'yxati</b>\n\n"
+    text += f"🧑‍💼 Asosiy admin: <code>{ADMIN_ID}</code>\n\n"
+    if not admins:
+        text += "Hozircha boshqa adminlar yo'q."
+    else:
+        for user_id, added_by, added_at in admins:
+            text += f"ID: <code>{user_id}</code> | qo'shgan: <code>{added_by}</code> | {added_at}\n"
+
+    await call.message.edit_text(text, reply_markup=back_kb("admin_back"), parse_mode="HTML")
+
+
 # Majburiy obuna
 @router.callback_query(F.data == "admin_sub")
 async def admin_sub(call: CallbackQuery):
@@ -161,6 +235,7 @@ async def admin_sub(call: CallbackQuery):
         parse_mode="HTML"
     )
 
+
 # Admin orqaga
 @router.callback_query(F.data == "admin_back")
 async def admin_back(call: CallbackQuery):
@@ -168,9 +243,10 @@ async def admin_back(call: CallbackQuery):
         return
     await call.message.edit_text(
         "👨‍💼 <b>Admin Panel</b>",
-        reply_markup=admin_kb(),
+        reply_markup=admin_kb(is_root=is_root_admin(call.from_user.id)),
         parse_mode="HTML"
     )
+
 
 # /cancel
 @router.message(Command("cancel"))

@@ -38,6 +38,13 @@ def init_db():
         added_at        TEXT DEFAULT (datetime('now'))
     )''')
 
+    # Adminlar jadvali
+    c.execute('''CREATE TABLE IF NOT EXISTS admins (
+        user_id     INTEGER PRIMARY KEY,
+        added_by    INTEGER,
+        added_at    TEXT DEFAULT (datetime('now'))
+    )''')
+
     conn.commit()
     conn.close()
 
@@ -167,6 +174,35 @@ def set_channel_auto_react(chat_id, value: bool):
     c.execute('UPDATE channels SET auto_react = ? WHERE chat_id = ?', (int(value), chat_id))
     conn.commit()
     conn.close()
+
+# --- Admin funksiyalari ---
+
+def add_admin(user_id, added_by):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('''INSERT OR IGNORE INTO admins (user_id, added_by)
+                 VALUES (?, ?)''', (user_id, added_by))
+    conn.commit()
+    conn.close()
+
+
+def get_admins():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('SELECT user_id, added_by, added_at FROM admins')
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+
+def is_admin_user(user_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('SELECT 1 FROM admins WHERE user_id = ?', (user_id,))
+    row = c.fetchone()
+    conn.close()
+    return bool(row)
+
 
 def get_all_channels_by_user(user_id):
     conn = get_conn()

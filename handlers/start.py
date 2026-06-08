@@ -1,10 +1,11 @@
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart, Command
 import json, os
 
+from config import SUBSCRIBE_CHANNEL
 from database import add_user, get_user_lang, is_blocked, get_all_channels_by_user, get_all_groups_by_user
-from keyboards.inline import main_menu_kb, channels_kb, groups_kb, lang_kb
+from keyboards.inline import main_menu_kb, channels_kb, groups_kb, lang_kb, subscribe_kb
 
 router = Router()
 
@@ -15,8 +16,17 @@ def t(lang, key):
     return data.get(key, key)
 
 # /start buyrug'i — faqat bot bilan shaxsiy chatda
+async def is_subscribed(bot: Bot, user_id: int) -> bool:
+    if not SUBSCRIBE_CHANNEL:
+        return True
+    try:
+        member = await bot.get_chat_member(SUBSCRIBE_CHANNEL, user_id)
+        return member.status not in ("left", "kicked")
+    except Exception:
+        return False
+
 @router.message(CommandStart())
-async def cmd_start(msg: Message):
+async def cmd_start(msg: Message, bot: Bot):
     user = msg.from_user
     add_user(user.id, user.username, user.full_name)
 
@@ -25,6 +35,14 @@ async def cmd_start(msg: Message):
         return
 
     lang = get_user_lang(user.id)
+    if not await is_subscribed(bot, user.id):
+        await msg.answer(
+            t(lang, "sub_required").format(channel=SUBSCRIBE_CHANNEL),
+            reply_markup=subscribe_kb(SUBSCRIBE_CHANNEL, lang),
+            parse_mode="HTML"
+        )
+        return
+
     await msg.answer(
         t(lang, "welcome"),
         reply_markup=main_menu_kb(lang),

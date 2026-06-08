@@ -9,6 +9,8 @@
   "btn_back": "↩️ Back",
   "btn_add_channel": "➕ Add channel",
   "btn_add_group": "➕ Add group",
+  "sub_required": "🔒 To use the bot, please subscribe to {channel} and send /start again.",
+  "subscribe_button": "Subscribe to the channel",
   "channel_list": "📋 Your channels list:\n\nYou can set up auto reactions for the following channel",
   "group_list": "📋 Your groups list:",
   "no_channels": "You have no channels yet. Add a channel 👇",

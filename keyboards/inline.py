@@ -27,6 +27,14 @@ def lang_kb():
     )
     return kb.as_markup()
 
+# Obuna tugmasi
+def subscribe_kb(channel, lang="uz"):
+    t = load_lang(lang)
+    kb = InlineKeyboardBuilder()
+    url = f"https://t.me/{channel.lstrip('@')}"
+    kb.row(InlineKeyboardButton(text=t["subscribe_button"], url=url))
+    return kb.as_markup()
+
 # Kanal ro'yxati klaviaturasi
 def channels_kb(channels: list, lang="uz"):
     t = load_lang(lang)
@@ -99,13 +107,16 @@ def channel_settings_kb(chat_id, auto_react, lang="uz"):
     return kb.as_markup()
 
 # Admin panel
-def admin_kb():
+def admin_kb(is_root: bool = False):
     kb = InlineKeyboardBuilder()
     kb.row(InlineKeyboardButton(text="👥 Foydalanuvchilar", callback_data="admin_users"))
     kb.row(InlineKeyboardButton(text="📊 Statistika", callback_data="admin_stats"))
     kb.row(InlineKeyboardButton(text="📨 Xabar yuborish", callback_data="admin_broadcast"))
     kb.row(InlineKeyboardButton(text="🚫 Bloklash", callback_data="admin_block"))
     kb.row(InlineKeyboardButton(text="✅ Blokdan chiqarish", callback_data="admin_unblock"))
+    if is_root:
+        kb.row(InlineKeyboardButton(text="➕ Admin qo'shish", callback_data="admin_add"))
+        kb.row(InlineKeyboardButton(text="👑 Adminlar", callback_data="admin_admins"))
     kb.row(InlineKeyboardButton(text="➕ Majburiy obuna", callback_data="admin_sub"))
     return kb.as_markup()
 
