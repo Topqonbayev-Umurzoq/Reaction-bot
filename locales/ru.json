@@ -25,5 +25,8 @@
   "bos_hint": "После /bos добавьте эмодзи.\nНапример: /bos 😎 или premium emoji ⭐",
   "only_admin": "❌ Эта команда только для администраторов группы!",
   "blocked": "❌ Вы заблокированы.",
-  "settings_menu": "⚙️ Настройки\n\nВыберите язык:"
+  "private_react_on": "✅ Включено",
+  "private_react_off": "❌ Отключено",
+  "private_react_button": "Реакции в личке",
+  "settings_menu": "⚙️ Настройки\n\nРеакции в личном чате: {status}\n\nВыберите язык:"
 }

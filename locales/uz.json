@@ -25,5 +25,8 @@
   "bos_hint": "/bos dan keyin emoji qo'yib yuboring.\nMasalan: /bos 😎 yoki premium emoji ⭐",
   "only_admin": "❌ Bu buyruq faqat guruh adminlari uchun!",
   "blocked": "❌ Siz bloklandingiz.",
-  "settings_menu": "⚙️ Sozlamalar\n\nTilni tanlang:"
+  "private_react_on": "✅ Yoqilgan",
+  "private_react_off": "❌ O'chirilgan",
+  "private_react_button": "Shaxsiy reaksiya",
+  "settings_menu": "⚙️ Sozlamalar\n\nShaxsiy chat reaksiya holati: {status}\n\nTilni tanlang:"
 }

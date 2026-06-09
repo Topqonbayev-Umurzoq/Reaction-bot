@@ -15,6 +15,8 @@ def init_db():
         full_name   TEXT,
         lang        TEXT DEFAULT 'uz',
         is_blocked  INTEGER DEFAULT 0,
+        private_auto_react INTEGER DEFAULT 1,
+        private_active_message_id INTEGER DEFAULT 0,
         joined_at   TEXT DEFAULT (datetime('now'))
     )''')
 
@@ -46,6 +48,20 @@ def init_db():
     )''')
 
     conn.commit()
+
+    try:
+        c.execute('ALTER TABLE users ADD COLUMN private_auto_react INTEGER DEFAULT 1')
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        c.execute('ALTER TABLE users ADD COLUMN private_active_message_id INTEGER DEFAULT 0')
+    except sqlite3.OperationalError:
+        pass
+
+    c.execute('UPDATE users SET private_auto_react = 1 WHERE private_auto_react IS NULL')
+    c.execute('UPDATE users SET private_active_message_id = 0 WHERE private_active_message_id IS NULL')
+    conn.commit()
     conn.close()
 
 # --- Foydalanuvchi funksiyalari ---
@@ -55,6 +71,36 @@ def add_user(user_id, username, full_name):
     c = conn.cursor()
     c.execute('''INSERT OR IGNORE INTO users (user_id, username, full_name)
                  VALUES (?, ?, ?)''', (user_id, username, full_name))
+    conn.commit()
+    conn.close()
+
+def get_user_private_auto_react(user_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('SELECT private_auto_react FROM users WHERE user_id = ?', (user_id,))
+    row = c.fetchone()
+    conn.close()
+    return bool(row[0]) if row else True
+
+def set_user_private_auto_react(user_id, value: bool):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('UPDATE users SET private_auto_react = ? WHERE user_id = ?', (int(value), user_id))
+    conn.commit()
+    conn.close()
+
+def get_user_private_active_message_id(user_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('SELECT private_active_message_id FROM users WHERE user_id = ?', (user_id,))
+    row = c.fetchone()
+    conn.close()
+    return int(row[0]) if row and row[0] else 0
+
+def set_user_private_active_message_id(user_id, message_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('UPDATE users SET private_active_message_id = ? WHERE user_id = ?', (int(message_id), user_id))
     conn.commit()
     conn.close()
 
@@ -133,8 +179,11 @@ def unblock_all_users():
 def add_group(chat_id, title, added_by):
     conn = get_conn()
     c = conn.cursor()
-    c.execute('''INSERT OR IGNORE INTO groups (chat_id, title, added_by)
-                 VALUES (?, ?, ?)''', (chat_id, title, added_by))
+    c.execute('''INSERT INTO groups (chat_id, title, reaction_emoji, auto_react, added_by)
+                 VALUES (?, ?, ?, ?, ?)
+                 ON CONFLICT(chat_id) DO UPDATE SET
+                     title = excluded.title,
+                     auto_react = 1''', (chat_id, title, 'random', 1, added_by))
     conn.commit()
     conn.close()
 
@@ -165,8 +214,11 @@ def set_group_auto_react(chat_id, value: bool):
 def add_channel(chat_id, title, added_by):
     conn = get_conn()
     c = conn.cursor()
-    c.execute('''INSERT OR IGNORE INTO channels (chat_id, title, added_by)
-                 VALUES (?, ?, ?)''', (chat_id, title, added_by))
+    c.execute('''INSERT INTO channels (chat_id, title, reaction_emoji, auto_react, added_by)
+                 VALUES (?, ?, ?, ?, ?)
+                 ON CONFLICT(chat_id) DO UPDATE SET
+                     title = excluded.title,
+                     auto_react = 1''', (chat_id, title, 'random', 1, added_by))
     conn.commit()
     conn.close()
 

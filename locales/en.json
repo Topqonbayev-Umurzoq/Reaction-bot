@@ -25,5 +25,8 @@
   "bos_hint": "Add an emoji after /bos.\nExample: /bos 😎 or premium emoji ⭐",
   "only_admin": "❌ This command is for group admins only!",
   "blocked": "❌ You are blocked.",
-  "settings_menu": "⚙️ Settings\n\nChoose language:"
+  "private_react_on": "✅ On",
+  "private_react_off": "❌ Off",
+  "private_react_button": "Private reaction",
+  "settings_menu": "⚙️ Settings\n\nPrivate chat reaction: {status}\n\nChoose language:"
 }

@@ -25,6 +25,18 @@ def lang_kb():
     kb.row(InlineKeyboardButton(text="🇷🇺 Русский", callback_data="setlang_ru"))
     return kb.as_markup()
 
+def settings_menu_kb(private_auto_react: bool, lang="uz"):
+    t = load_lang(lang)
+    status = t.get("private_react_on", "✅ Yoqilgan") if private_auto_react else t.get("private_react_off", "❌ O'chirilgan")
+    button_label = t.get("private_react_button", "Shaxsiy reaksiya")
+    kb = InlineKeyboardBuilder()
+    kb.row(InlineKeyboardButton(text=f"{button_label}: {status}", callback_data="toggle_private_react"))
+    kb.row(InlineKeyboardButton(text="🇺🇿 O'zbek", callback_data="setlang_uz"))
+    kb.row(InlineKeyboardButton(text="🇬🇧 English", callback_data="setlang_en"))
+    kb.row(InlineKeyboardButton(text="🇷🇺 Русский", callback_data="setlang_ru"))
+    kb.row(InlineKeyboardButton(text=t["btn_back"], callback_data="back_main"))
+    return kb.as_markup()
+
 # Obuna tugmasi
 def subscribe_kb(channel, lang="uz"):
     t = load_lang(lang)
@@ -64,23 +76,24 @@ EMOJIS = [
     "💘","🙉","🦄","💊","🙊","😎","👾","🤷","😡"
 ]
 
-def reaction_kb(selected: str = None):
+def reaction_kb(selected: str = None, chat_id: int = None, kind: str = "group"):
     kb = InlineKeyboardBuilder()
     row = []
     for i, emoji in enumerate(EMOJIS):
         mark = "✅" if emoji == selected else ""
         row.append(InlineKeyboardButton(
             text=f"{emoji}{mark}",
-            callback_data=f"react_{emoji}"
+            callback_data=f"react_{kind}_{chat_id}_{emoji}" if chat_id is not None else f"react_{emoji}"
         ))
         if len(row) == 5:
             kb.row(*row)
             row = []
     if row:
         kb.row(*row)
+    random_mark = "✅" if selected == "random" else ""
     kb.row(
-        InlineKeyboardButton(text="🎲 Random reaksiya", callback_data="react_random"),
-        InlineKeyboardButton(text="Tanlab bo'ldim ✅", callback_data="react_done")
+        InlineKeyboardButton(text=f"🎲 Random reaksiya{random_mark}", callback_data=f"react_{kind}_{chat_id}_random" if chat_id is not None else "react_random"),
+        InlineKeyboardButton(text="Tanlab bo'ldim ✅", callback_data=f"react_{kind}_{chat_id}_done" if chat_id is not None else "react_done")
     )
     return kb.as_markup()
 
