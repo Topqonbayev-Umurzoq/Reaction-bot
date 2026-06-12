@@ -5,9 +5,17 @@ import json, os
 import random
 
 from database import get_user, add_user, get_user_lang, get_user_private_auto_react, get_user_private_active_message_id, set_user_private_active_message_id, is_blocked, get_all_channels_by_user, get_all_groups_by_user
-from keyboards.inline import main_menu_kb, channels_kb, groups_kb, lang_kb
+from keyboards.inline import main_menu_kb, channels_kb, groups_kb, lang_kb, invite_link_kb
 
 router = Router()
+
+ADMIN_RIGHTS = "change_info+post_messages+delete_messages+edit_messages+restrict_members+pin_messages+manage_video_chats+promote_members+invite_users"
+
+
+async def build_admin_invite_url(bot, scope: str = "group") -> str:
+    me = await bot.get_me()
+    username = me.username or "ReaksiyalarBot"
+    return f"https://t.me/{username}?startgroup=on&admin={ADMIN_RIGHTS}" if scope == "group" else f"https://t.me/{username}?startchannel=on&admin={ADMIN_RIGHTS}"
 
 def t(lang, key):
     path = os.path.join("locales", f"{lang}.json")
@@ -130,10 +138,11 @@ async def add_channel_guide(call: CallbackQuery):
         await call.answer(stale_button_text(), show_alert=True)
         return
     lang = get_user_lang(call.from_user.id)
-    from keyboards.inline import back_kb
+    invite_url = await build_admin_invite_url(call.bot, scope="channel")
     await call.message.edit_text(
-        t(lang, "add_bot_to_channel"),
-        reply_markup=back_kb("type_channel")
+        t(lang, "add_bot_to_channel") + "\n\n✅ Pastdagi tugma bosilganda bot avtomatik admin huquqlari bilan taklif qilinadi.",
+        reply_markup=invite_link_kb(invite_url, "type_channel", label="➕ Kanalga qo‘shish"),
+        parse_mode="HTML"
     )
 
 # Guruh qo'shish yo'riqnomasi
@@ -143,10 +152,11 @@ async def add_group_guide(call: CallbackQuery):
         await call.answer(stale_button_text(), show_alert=True)
         return
     lang = get_user_lang(call.from_user.id)
-    from keyboards.inline import back_kb
+    invite_url = await build_admin_invite_url(call.bot, scope="group")
     await call.message.edit_text(
-        t(lang, "add_bot_to_group"),
-        reply_markup=back_kb("type_group")
+        t(lang, "add_bot_to_group") + "\n\n✅ Pastdagi tugma bosilganda bot avtomatik admin huquqlari bilan guruhga taklif qilinadi.",
+        reply_markup=invite_link_kb(invite_url, "type_group", label="➕ Guruhga qo‘shish"),
+        parse_mode="HTML"
     )
 
 # Kanal tanlanganda sozlamalar

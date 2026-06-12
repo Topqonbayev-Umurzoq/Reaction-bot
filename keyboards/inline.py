@@ -137,3 +137,10 @@ def back_kb(callback="back_main"):
     kb = InlineKeyboardBuilder()
     kb.row(InlineKeyboardButton(text="↩️ Orqaga", callback_data=callback))
     return kb.as_markup()
+
+
+def invite_link_kb(url: str, back_callback: str = "back_main", label: str = "➕ Qo‘shish"):
+    kb = InlineKeyboardBuilder()
+    kb.row(InlineKeyboardButton(text=label, url=url))
+    kb.row(InlineKeyboardButton(text="↩️ Orqaga", callback_data=back_callback))
+    return kb.as_markup()
