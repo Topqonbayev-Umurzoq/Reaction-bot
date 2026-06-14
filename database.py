@@ -52,6 +52,8 @@ def init_db():
         bot_username    TEXT,
         bot_title       TEXT,
         added_by        INTEGER,
+        status          TEXT DEFAULT 'unknown',
+        last_checked    TEXT DEFAULT (datetime('now')),
         added_at        TEXT DEFAULT (datetime('now'))
     )''')
 
@@ -76,6 +78,21 @@ def init_db():
 
     c.execute('UPDATE users SET private_auto_react = 1 WHERE private_auto_react IS NULL')
     c.execute('UPDATE users SET private_active_message_id = 0 WHERE private_active_message_id IS NULL')
+
+    c.execute('PRAGMA table_info(bots)')
+    bot_columns = [row[1] for row in c.fetchall()]
+    if 'status' not in bot_columns:
+        try:
+            c.execute('ALTER TABLE bots ADD COLUMN status TEXT DEFAULT "unknown"')
+        except sqlite3.OperationalError:
+            pass
+    if 'last_checked' not in bot_columns:
+        try:
+            c.execute('ALTER TABLE bots ADD COLUMN last_checked TEXT')
+            c.execute('UPDATE bots SET last_checked = datetime("now") WHERE last_checked IS NULL')
+        except sqlite3.OperationalError:
+            pass
+
     conn.commit()
     conn.close()
 
@@ -319,9 +336,9 @@ def add_bot(bot_token, bot_username, bot_title, added_by):
     conn = get_conn()
     c = conn.cursor()
     c.execute('''INSERT OR REPLACE INTO bots
-                 (bot_token, bot_username, bot_title, added_by)
-                 VALUES (?, ?, ?, ?)''',
-              (bot_token, bot_username, bot_title, added_by))
+                 (bot_token, bot_username, bot_title, added_by, status)
+                 VALUES (?, ?, ?, ?, ?)''',
+              (bot_token, bot_username, bot_title, added_by, 'unknown'))
     conn.commit()
     conn.close()
 
@@ -338,10 +355,38 @@ def get_bot_count():
 def get_all_bots():
     conn = get_conn()
     c = conn.cursor()
-    c.execute('SELECT bot_username, bot_title, added_by, added_at FROM bots')
+    c.execute('SELECT bot_token, bot_username, bot_title, added_by, added_at, status, last_checked FROM bots')
     rows = c.fetchall()
     conn.close()
     return rows
+
+
+def update_bot_status(bot_token, status, last_checked=None):
+    conn = get_conn()
+    c = conn.cursor()
+    if last_checked is None:
+        c.execute('UPDATE bots SET status = ?, last_checked = datetime("now") WHERE bot_token = ?', (status, bot_token))
+    else:
+        c.execute('UPDATE bots SET status = ?, last_checked = ? WHERE bot_token = ?', (status, last_checked, bot_token))
+    conn.commit()
+    conn.close()
+
+
+def remove_bot(bot_token):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('DELETE FROM bots WHERE bot_token = ?', (bot_token,))
+    conn.commit()
+    conn.close()
+
+
+def get_bot_by_username(bot_username):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('SELECT bot_token, bot_username, bot_title, added_by, added_at, status, last_checked FROM bots WHERE bot_username = ?', (bot_username,))
+    row = c.fetchone()
+    conn.close()
+    return row
 
 
 def remove_admin(user_id):

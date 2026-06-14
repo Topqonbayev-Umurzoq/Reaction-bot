@@ -12,7 +12,7 @@ from database import (
     add_admin, get_admins, is_admin_user, remove_admin, remove_all_admins,
     get_all_blocked_users, unblock_all_users,
     get_setting, set_setting, delete_setting,
-    add_bot, get_bot_count
+    add_bot, get_bot_count, get_all_bots, update_bot_status, remove_bot
 )
 from keyboards.inline import admin_kb, back_kb
 
@@ -561,6 +561,22 @@ async def admin_new_bot(call: CallbackQuery, state: FSMContext):
     )
 
 
+async def check_bot_token(token: str) -> tuple[str, str, str]:
+    test_bot = Bot(token=token)
+    try:
+        me = await test_bot.get_me()
+        username = f"@{me.username}" if me.username else str(me.id)
+        title = me.full_name or me.username or username
+        await test_bot.session.close()
+        return "active", username, title
+    except Exception:
+        try:
+            await test_bot.session.close()
+        except Exception:
+            pass
+        return "invalid", "unknown", "unknown"
+
+
 @router.message(AdminState.waiting_new_bot_token)
 async def admin_new_bot_do(msg: Message, state: FSMContext):
     if not is_root_admin(msg.from_user.id):
@@ -572,21 +588,119 @@ async def admin_new_bot_do(msg: Message, state: FSMContext):
         return
 
     token = msg.text.strip()
-    test_bot = Bot(token=token)
-    try:
-        me = await test_bot.get_me()
-        username = f"@{me.username}" if me.username else str(me.id)
-        title = me.full_name or me.username or username
+    parts = token.split()
+    if parts and parts[0].lower() == "bot" and len(parts) > 1:
+        token = parts[1].strip()
+
+    status, username, title = await check_bot_token(token)
+    if status == "active":
         add_bot(token, username, title, msg.from_user.id)
+        update_bot_status(token, "active")
         await msg.answer(f"✅ Yangi bot saqlandi: {title} ({username})", reply_markup=back_kb("admin_back"))
-    except Exception:
+    else:
         await msg.answer("❌ Token noto'g'ri yoki botga ulanish mumkin emas. Iltimos qayta urinib ko'ring.")
-    finally:
-        try:
-            await test_bot.session.close()
-        except Exception:
-            pass
-        await state.clear()
+    await state.clear()
+
+
+@router.callback_query(F.data == "admin_bots")
+async def admin_bots(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return
+    if is_blocked(call.from_user.id):
+        await call.answer("❌ Siz bloklandingiz.")
+        return
+
+    bots = get_all_bots()
+    if not bots:
+        await call.message.edit_text(
+            "🤖 <b>Botlar ro'yxati</b>\n\nHozircha botlar saqlanmagan.",
+            reply_markup=InlineKeyboardBuilder()
+                .row(InlineKeyboardButton(text="➕ Yangi bot", callback_data="admin_new_bot"))
+                .row(InlineKeyboardButton(text="↩️ Orqaga", callback_data="admin_back"))
+                .as_markup(),
+            parse_mode="HTML"
+        )
+        return
+
+    text = "🤖 <b>Botlar ro'yxati</b>\n\n"
+    active_count = 0
+    invalid_count = 0
+    for bot_token, bot_username, bot_title, added_by, added_at, status, last_checked in bots:
+        status_icon = "✅" if status == "active" else "❌"
+        if status == "active":
+            active_count += 1
+        else:
+            invalid_count += 1
+        text += (
+            f"{status_icon} <b>{bot_title}</b> ({bot_username})\n"
+            f"ID: <code>{added_by}</code> | Qo'shildi: {added_at}\n"
+            f"Holat: <b>{status}</b> | Tekshirilgan: {last_checked}\n\n"
+        )
+
+    text = f"🤖 <b>Botlar ro'yxati</b> — Faol: {active_count}, Nofaol: {invalid_count}\n\n" + text
+
+    kb = InlineKeyboardBuilder()
+    kb.row(InlineKeyboardButton(text="🔄 Statusni yangilash", callback_data="admin_refresh_bots"))
+    kb.row(InlineKeyboardButton(text="🗑️ Yaroqsiz botlarni o'chirish", callback_data="admin_cleanup_invalid_bots"))
+    kb.row(InlineKeyboardButton(text="➕ Yangi bot", callback_data="admin_new_bot"))
+    kb.row(InlineKeyboardButton(text="↩️ Orqaga", callback_data="admin_back"))
+
+    await call.message.edit_text(text, reply_markup=kb.as_markup(), parse_mode="HTML")
+
+
+@router.callback_query(F.data == "admin_refresh_bots")
+async def admin_refresh_bots(call: CallbackQuery):
+    if not is_root_admin(call.from_user.id):
+        return
+    if is_blocked(call.from_user.id):
+        await call.answer("❌ Siz bloklandingiz.")
+        return
+
+    bots = get_all_bots()
+    if not bots:
+        await call.answer("🤖 Ro'yxatda bot yo'q.")
+        return
+
+    msg = await call.message.edit_text("⏳ Botlar holati tekshirilmoqda...", parse_mode="HTML")
+    active = 0
+    invalid = 0
+
+    for bot_token, _, _, _, _, _, _ in bots:
+        status, username, title = await check_bot_token(bot_token)
+        update_bot_status(bot_token, status)
+        if status == "active":
+            active += 1
+        else:
+            invalid += 1
+
+    await msg.edit_text(f"✅ Tekshirildi. Faol: {active}, Nofaol: {invalid}.\n\nRo'yxatni qayta oching.")
+
+
+@router.callback_query(F.data == "admin_cleanup_invalid_bots")
+async def admin_cleanup_invalid_bots(call: CallbackQuery):
+    if not is_root_admin(call.from_user.id):
+        return
+    if is_blocked(call.from_user.id):
+        await call.answer("❌ Siz bloklandingiz.")
+        return
+
+    bots = get_all_bots()
+    invalid_bots = [bot_token for bot_token, _, _, _, _, status, _ in bots if status != "active"]
+    if not invalid_bots:
+        await call.answer("✅ Nofaol bot yo'q.")
+        return
+
+    for bot_token in invalid_bots:
+        remove_bot(bot_token)
+
+    await call.message.edit_text(
+        f"🗑️ {len(invalid_bots)} ta yaroqsiz bot o'chirildi.",
+        reply_markup=InlineKeyboardBuilder()
+            .row(InlineKeyboardButton(text="🤖 Botlar ro'yxati", callback_data="admin_bots"))
+            .row(InlineKeyboardButton(text="↩️ Orqaga", callback_data="admin_back"))
+            .as_markup(),
+        parse_mode="HTML"
+    )
 
 
 # Admin orqaga
