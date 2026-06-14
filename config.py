@@ -11,4 +11,4 @@ SUBSCRIBE_CHANNEL = os.getenv("SUBSCRIBE_CHANNEL", "")
 DB_NAME = "bot.db"
 
 LANGUAGES = ["uz", "ru", "en"]
-DEFAULT_LANG = "uz"
+DEFAULT_LANG = "en"

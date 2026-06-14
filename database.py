@@ -1,5 +1,5 @@
 import sqlite3
-from config import DB_NAME
+from config import DB_NAME, SUBSCRIBE_CHANNEL
 
 def get_conn():
     return sqlite3.connect(DB_NAME)
@@ -36,6 +36,21 @@ def init_db():
         title           TEXT,
         reaction_emoji  TEXT DEFAULT '👍',
         auto_react      INTEGER DEFAULT 0,
+        added_by        INTEGER,
+        added_at        TEXT DEFAULT (datetime('now'))
+    )''')
+
+    # Sozlamalar jadvali
+    c.execute('''CREATE TABLE IF NOT EXISTS settings (
+        key     TEXT PRIMARY KEY,
+        value   TEXT
+    )''')
+
+    # Botlar jadvali
+    c.execute('''CREATE TABLE IF NOT EXISTS bots (
+        bot_token       TEXT PRIMARY KEY,
+        bot_username    TEXT,
+        bot_title       TEXT,
         added_by        INTEGER,
         added_at        TEXT DEFAULT (datetime('now'))
     )''')
@@ -158,6 +173,33 @@ def is_blocked(user_id):
     return bool(row and row[0])
 
 
+def get_setting(key):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('SELECT value FROM settings WHERE key = ?', (key,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+
+def set_setting(key, value):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('INSERT INTO settings (key, value) VALUES (?, ?)'
+              ' ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+              (key, value))
+    conn.commit()
+    conn.close()
+
+
+def delete_setting(key):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('DELETE FROM settings WHERE key = ?', (key,))
+    conn.commit()
+    conn.close()
+
+
 def get_all_blocked_users():
     conn = get_conn()
     c = conn.cursor()
@@ -271,6 +313,35 @@ def is_admin_user(user_id):
     row = c.fetchone()
     conn.close()
     return bool(row)
+
+
+def add_bot(bot_token, bot_username, bot_title, added_by):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('''INSERT OR REPLACE INTO bots
+                 (bot_token, bot_username, bot_title, added_by)
+                 VALUES (?, ?, ?, ?)''',
+              (bot_token, bot_username, bot_title, added_by))
+    conn.commit()
+    conn.close()
+
+
+def get_bot_count():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('SELECT COUNT(*) FROM bots')
+    count = c.fetchone()[0]
+    conn.close()
+    return count
+
+
+def get_all_bots():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('SELECT bot_username, bot_title, added_by, added_at FROM bots')
+    rows = c.fetchall()
+    conn.close()
+    return rows
 
 
 def remove_admin(user_id):

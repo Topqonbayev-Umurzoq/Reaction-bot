@@ -14,6 +14,7 @@
   "subscribe_button": "Kanalga obuna bo‘lish",
   "channel_list": "📋 Kanallaringiz ro'yxati:\n\nQuyidagi kanalingizga avto reaksiyalarni sozlashingiz mumkin",
   "group_list": "📋 Guruhlaringiz ro'yxati:",
+  "group_start": "👥 Guruhlar uchun kerakli buyruqlar ro'yxati 📜\n\n1. /reaksiya Buni guruhga yuborsangiz auto reaksiyani sozlashingiz mumkin.\n1.1 /reaksiya 👍 Bunda (👍) ni o'rniga premium emoji qo'yasiz, keyin guruhda kimnidir xabariga reply qilib yuborasiz va oddiy reaksiya bosadi.\n1.2 /reaksiya ⭐ Bunda (⭐) ni o'rniga premium emoji qo'yasiz, keyin guruhda kimnidir xabariga reply qilib yuborasiz va Premium reaksiya bosadi.\n\n2. /reaksiya_on Buni guruhga yuborsangiz hammani xabariga auto reaksiya bosadi.\n\n3. /reaksiya_off Buni guruhga yuborsangiz hammani xabariga auto reaksiya bosish to'xtaydi.\n\n4. /bos 👍 Guruhdagi bot bitta xil reaksiya bosadi.\n4.1 /bos5 👍 Guruhdagi 1 dan 5 gacha botlar bir xil reaksiya bosadi. 5 ni o'rniga 2-100 gacha raqam yozishingiz mumkin.\n\n5. /admin100 Avval bu buyruq beriladi va avtomatik tarzda 100 ta botimizni guruhga qo'shadi va barcha botlar realizatsiyaga shaylanadi. 100 o'rniga istagan son kiriting, max 100.\n\n👆 Bu buyruqlarni guruhlarda sinab ko'ring 😉",
   "no_channels": "Sizda hali kanal yo'q. Kanal qo'shing 👇",
   "no_groups": "Sizda hali guruh yo'q. Guruh qo'shing 👇",
   "add_bot_to_channel": "Botni kanalingizga admin qilib qo‘shing va pastdagi tugmani bosing.\n\nKanaldan keyin:\n• Kanalga post joylanganda bot avtomatik reaksiya beradi\n• Reaksiya turini shaxsiy chatdagi kanal sozlamalaridan o‘zgartirasiz",

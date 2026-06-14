@@ -127,6 +127,7 @@ def admin_kb(is_root: bool = False):
     kb.row(InlineKeyboardButton(text="✅ Blokdan chiqarish", callback_data="admin_unblock"))
     kb.row(InlineKeyboardButton(text="📋 Bloklangan", callback_data="admin_view_blocked"))
     if is_root:
+        kb.row(InlineKeyboardButton(text="➕ Yangi bot", callback_data="admin_new_bot"))
         kb.row(InlineKeyboardButton(text="➕ Admin qo'shish", callback_data="admin_add"))
         kb.row(InlineKeyboardButton(text="👑 Adminlar", callback_data="admin_admins"))
     kb.row(InlineKeyboardButton(text="➕ Majburiy obuna", callback_data="admin_sub"))

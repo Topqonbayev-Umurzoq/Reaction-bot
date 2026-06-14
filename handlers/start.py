@@ -4,8 +4,9 @@ from aiogram.filters import CommandStart, Command
 import json, os
 import random
 
-from database import get_user, add_user, get_user_lang, get_user_private_auto_react, get_user_private_active_message_id, set_user_private_active_message_id, is_blocked, get_all_channels_by_user, get_all_groups_by_user
-from keyboards.inline import main_menu_kb, channels_kb, groups_kb, lang_kb, invite_link_kb
+from config import SUBSCRIBE_CHANNEL
+from database import get_user, add_user, get_user_lang, get_user_private_auto_react, get_user_private_active_message_id, set_user_private_active_message_id, is_blocked, get_all_channels_by_user, get_all_groups_by_user, get_setting
+from keyboards.inline import main_menu_kb, channels_kb, groups_kb, lang_kb, invite_link_kb, subscribe_kb
 
 router = Router()
 
@@ -55,14 +56,55 @@ def is_fresh_private_callback(call: CallbackQuery) -> bool:
 def stale_button_text() -> str:
     return "Bu tugma endi eskirgan, oxirgi xabarni ishlating"
 
-# /start buyrug'i — faqat bot bilan shaxsiy chatda
+
+def get_required_subscribe_channel() -> str:
+    channel = get_setting("subscribe_channel")
+    return channel if channel else SUBSCRIBE_CHANNEL
+
+
+async def is_user_subscribed(bot, user_id: int) -> bool:
+    channel = get_required_subscribe_channel()
+    if not channel:
+        return True
+    try:
+        member = await bot.get_chat_member(channel, user_id)
+        return member.status not in ("left", "kicked")
+    except Exception:
+        return False
+
+
+def group_start_text(lang: str = "uz") -> str:
+    return t(lang, "group_start")
+
+
+# /start buyrug'i
 @router.message(CommandStart())
 async def cmd_start(msg: Message):
     user = msg.from_user
     existing_user = get_user(user.id)
+    lang = get_user_lang(user.id) if existing_user else "uz"
+
+    if existing_user and is_blocked(user.id):
+        return
+
+    if msg.chat.type in ("group", "supergroup"):
+        await msg.answer(group_start_text(lang), parse_mode="HTML")
+        return
 
     if not existing_user:
         add_user(user.id, user.username, user.full_name)
+
+    if not await is_user_subscribed(msg.bot, user.id):
+        required_channel = get_required_subscribe_channel()
+        sent = await msg.answer(
+            t(lang, "sub_required").format(channel=required_channel),
+            reply_markup=subscribe_kb(required_channel, lang),
+            parse_mode="HTML"
+        )
+        set_user_private_active_message_id(user.id, sent.message_id)
+        return
+
+    if not existing_user:
         sent = await msg.answer(
             t("uz", "choose_lang"),
             reply_markup=lang_kb(),
@@ -76,7 +118,6 @@ async def cmd_start(msg: Message):
         await msg.answer("❌ Siz bloklandingiz.")
         return
 
-    lang = get_user_lang(user.id)
     sent = await msg.answer(
         f"{t(lang, 'welcome')}\n\n{t(lang, 'your_id').format(id=user.id)}",
         reply_markup=main_menu_kb(lang),

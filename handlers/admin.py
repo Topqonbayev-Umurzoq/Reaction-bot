@@ -6,11 +6,13 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import InlineKeyboardButton
 
-from config import ADMIN_ID
+from config import ADMIN_ID, SUBSCRIBE_CHANNEL
 from database import (
     get_all_users, block_user, unblock_user, is_blocked,
     add_admin, get_admins, is_admin_user, remove_admin, remove_all_admins,
-    get_all_blocked_users, unblock_all_users
+    get_all_blocked_users, unblock_all_users,
+    get_setting, set_setting, delete_setting,
+    add_bot, get_bot_count
 )
 from keyboards.inline import admin_kb, back_kb
 
@@ -23,6 +25,8 @@ class AdminState(StatesGroup):
     waiting_add_admin = State()
     waiting_remove_admin = State()
     waiting_unblock_blocked = State()
+    waiting_sub_channel = State()
+    waiting_new_bot_token = State()
 
 
 
@@ -49,8 +53,24 @@ async def cmd_admin(msg: Message):
     else:
         extra += "\nSiz admin sifatida ishlayapsiz."
 
+    from database import get_conn, get_setting
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM groups")
+    groups = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM channels")
+    channels = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM bots")
+    bots = c.fetchone()[0]
+    conn.close()
+
+    required_channel = get_setting("subscribe_channel") or SUBSCRIBE_CHANNEL
+    if not required_channel:
+        required_channel = "yo'q"
+
     await msg.answer(
-        "👨‍💼 <b>Admin Panel</b>" + extra,
+        "👨‍💼 <b>Admin Panel</b>" + extra +
+        f"\n\n👥 Guruhlar: <b>{groups}</b>\n📢 Kanallar: <b>{channels}</b>\n🤖 Botlar: <b>{bots}</b>\n\nMajburiy obuna: <b>{required_channel}</b>\n\nBu botlar asosiy bot orqali boshqariladi.",
         reply_markup=admin_kb(is_root=is_root),
         parse_mode="HTML"
     )
@@ -98,6 +118,8 @@ async def admin_stats(call: CallbackQuery):
     groups = c.fetchone()[0]
     c.execute("SELECT COUNT(*) FROM channels")
     channels = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM bots")
+    bots = c.fetchone()[0]
     conn.close()
 
     text = (
@@ -105,7 +127,8 @@ async def admin_stats(call: CallbackQuery):
         f"👥 Jami foydalanuvchilar: <b>{total}</b>\n"
         f"🚫 Bloklangan: <b>{blocked}</b>\n"
         f"👥 Guruhlar: <b>{groups}</b>\n"
-        f"📢 Kanallar: <b>{channels}</b>"
+        f"📢 Kanallar: <b>{channels}</b>\n"
+        f"🤖 Botlar: <b>{bots}</b>"
     )
     await call.message.edit_text(text, reply_markup=back_kb("admin_back"), parse_mode="HTML")
 
@@ -466,29 +489,133 @@ async def admin_unblock_all_confirm(call: CallbackQuery):
 
 # Majburiy obuna
 @router.callback_query(F.data == "admin_sub")
-async def admin_sub(call: CallbackQuery):
+async def admin_sub(call: CallbackQuery, state: FSMContext):
     if not is_admin(call.from_user.id):
         return
     if is_blocked(call.from_user.id):
         await call.answer("❌ Siz bloklandingiz.")
         return
+
+    current_channel = get_setting("subscribe_channel") or SUBSCRIBE_CHANNEL
+    if not current_channel:
+        current_channel = "yo'q"
+
+    await state.set_state(AdminState.waiting_sub_channel)
     await call.message.edit_text(
-        "➕ <b>Majburiy obuna</b>\n\nBu funksiya tez orada qo'shiladi.",
+        "➕ <b>Majburiy obuna</b>\n\n"
+        f"Hozirgi kanal: <b>{current_channel}</b>\n\n"
+        "Obuna talab qilinadigan kanal username (@username) ni yuboring.\n"
+        "Agar talabni olib tashlamoqchi bo'lsangiz, clear deb yozing.",
         reply_markup=back_kb("admin_back"),
         parse_mode="HTML"
     )
 
 
+@router.message(AdminState.waiting_sub_channel)
+async def admin_set_sub_channel(msg: Message, state: FSMContext):
+    if not is_root_admin(msg.from_user.id):
+        await state.clear()
+        return
+    if is_blocked(msg.from_user.id):
+        await msg.answer("❌ Siz bloklandingiz.")
+        await state.clear()
+        return
+
+    text = msg.text.strip()
+    if text.lower() == "clear":
+        delete_setting("subscribe_channel")
+        await msg.answer("✅ Majburiy obuna bekor qilindi.", reply_markup=back_kb("admin_back"))
+        await state.clear()
+        return
+
+    channel = text
+    if channel.startswith("https://t.me/"):
+        channel = channel.split("https://t.me/")[-1].strip()
+    if not channel.startswith("@"):
+        channel = "@" + channel
+
+    try:
+        await msg.bot.get_chat(channel)
+        set_setting("subscribe_channel", channel)
+        await msg.answer(f"✅ Majburiy obuna kanali {channel} qilib belgilandi.", reply_markup=back_kb("admin_back"))
+    except Exception:
+        await msg.answer("❌ Kanal topilmadi yoki username noto'g'ri. Iltimos qayta urinib ko'ring.")
+    finally:
+        await state.clear()
+
+
+@router.callback_query(F.data == "admin_new_bot")
+async def admin_new_bot(call: CallbackQuery, state: FSMContext):
+    if not is_root_admin(call.from_user.id):
+        return
+    if is_blocked(call.from_user.id):
+        await call.answer("❌ Siz bloklandingiz.")
+        return
+
+    await state.set_state(AdminState.waiting_new_bot_token)
+    await call.message.edit_text(
+        "➕ <b>Yangi bot qo'shish</b>\n\n"
+        "Bot tokenini yuboring. Token to'g'ri bo'lsa, u bazaga saqlanadi.",
+        reply_markup=back_kb("admin_back"),
+        parse_mode="HTML"
+    )
+
+
+@router.message(AdminState.waiting_new_bot_token)
+async def admin_new_bot_do(msg: Message, state: FSMContext):
+    if not is_root_admin(msg.from_user.id):
+        await state.clear()
+        return
+    if is_blocked(msg.from_user.id):
+        await msg.answer("❌ Siz bloklandingiz.")
+        await state.clear()
+        return
+
+    token = msg.text.strip()
+    test_bot = Bot(token=token)
+    try:
+        me = await test_bot.get_me()
+        username = f"@{me.username}" if me.username else str(me.id)
+        title = me.full_name or me.username or username
+        add_bot(token, username, title, msg.from_user.id)
+        await msg.answer(f"✅ Yangi bot saqlandi: {title} ({username})", reply_markup=back_kb("admin_back"))
+    except Exception:
+        await msg.answer("❌ Token noto'g'ri yoki botga ulanish mumkin emas. Iltimos qayta urinib ko'ring.")
+    finally:
+        try:
+            await test_bot.session.close()
+        except Exception:
+            pass
+        await state.clear()
+
+
 # Admin orqaga
 @router.callback_query(F.data == "admin_back")
-async def admin_back(call: CallbackQuery):
+async def admin_back(call: CallbackQuery, state: FSMContext):
     if not is_admin(call.from_user.id):
         return
     if is_blocked(call.from_user.id):
         await call.answer("❌ Siz bloklandingiz.")
         return
+
+    await state.clear()
+    from database import get_conn
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM groups")
+    groups = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM channels")
+    channels = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM bots")
+    bots = c.fetchone()[0]
+    conn.close()
+
+    required_channel = get_setting("subscribe_channel") or SUBSCRIBE_CHANNEL
+    if not required_channel:
+        required_channel = "yo'q"
+
     await call.message.edit_text(
-        "👨‍💼 <b>Admin Panel</b>",
+        f"👨‍💼 <b>Admin Panel</b>\n\n👥 Guruhlar: <b>{groups}</b>\n📢 Kanallar: <b>{channels}</b>\n🤖 Botlar: <b>{bots}</b>\n\nMajburiy obuna: <b>{required_channel}</b>\n\nBu botlar asosiy bot orqali boshqariladi.",
         reply_markup=admin_kb(is_root=is_root_admin(call.from_user.id)),
         parse_mode="HTML"
     )

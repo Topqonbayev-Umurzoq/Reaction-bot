@@ -3,6 +3,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.exceptions import TelegramBadRequest
 
+from config import SUBSCRIBE_CHANNEL
 from database import (
     get_user,
     add_user,
@@ -12,8 +13,9 @@ from database import (
     set_user_private_auto_react,
     get_user_private_active_message_id,
     set_user_private_active_message_id,
+    get_setting,
 )
-from keyboards.inline import lang_kb, settings_menu_kb
+from keyboards.inline import lang_kb, settings_menu_kb, subscribe_kb
 import json, os
 import random
 
@@ -58,6 +60,23 @@ def is_fresh_private_callback(call: CallbackQuery) -> bool:
 
 def stale_button_text() -> str:
     return "Bu tugma endi eskirgan, oxirgi xabarni ishlating"
+
+
+def get_required_subscribe_channel() -> str:
+    channel = get_setting("subscribe_channel")
+    return channel if channel else SUBSCRIBE_CHANNEL
+
+
+async def is_user_subscribed(bot, user_id: int) -> bool:
+    channel = get_required_subscribe_channel()
+    if not channel:
+        return True
+    try:
+        member = await bot.get_chat_member(channel, user_id)
+        return member.status not in ("left", "kicked")
+    except Exception:
+        return False
+
 
 def t(lang, key):
     path = os.path.join("locales", f"{lang}.json")
@@ -117,6 +136,17 @@ async def set_lang(call: CallbackQuery):
     await call.answer(t(new_lang, "lang_set"), show_alert=True)
     if call.message.chat.type == "private":
         private_auto_react = get_user_private_auto_react(call.from_user.id)
+        if not await is_user_subscribed(call.bot, call.from_user.id):
+            required_channel = get_required_subscribe_channel()
+            await safe_edit_text(
+                call.message,
+                t(new_lang, "sub_required").format(channel=required_channel),
+                reply_markup=subscribe_kb(required_channel, new_lang),
+                parse_mode="HTML"
+            )
+            set_user_private_active_message_id(call.from_user.id, call.message.message_id)
+            return
+
         await safe_edit_text(
             call.message,
             t(new_lang, "settings_menu").format(
