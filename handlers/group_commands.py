@@ -11,8 +11,16 @@ from database import (
     get_user_lang,
     get_user_private_active_message_id,
     set_user_private_active_message_id,
+    get_all_bots, get_bot_by_token, get_bot_reaction, set_bot_reaction, update_bot_status,
 )
 from keyboards.inline import reaction_kb, back_kb, group_settings_kb, channel_settings_kb
+from handlers.utils import (
+    get_reaction_from_row,
+    get_auto_react_from_row,
+    build_reaction_payload,
+    parse_reaction_command,
+    parse_bos_command,
+)
 
 router = Router()
 
@@ -53,14 +61,118 @@ def reaction_value_label(value: str) -> str:
 async def set_reaction(bot: Bot, chat_id: int, message_id: int, emoji: str):
     if emoji == "random" or not emoji:
         emoji = random.choice(EMOJIS)
+
+    payload = build_reaction_payload(emoji)
+    if not payload:
+        return
+
     try:
-        await bot.set_message_reaction(
-            chat_id,
-            message_id,
-            reaction=[ReactionTypeEmoji(emoji=emoji)]
-        )
+        await bot.set_message_reaction(chat_id, message_id, reaction=payload)
     except Exception:
         pass
+
+
+async def refresh_bot_statuses():
+    for row in get_all_bots():
+        if not row or not row[0]:
+            continue
+        token = row[0]
+        try:
+            temp_bot = Bot(token=token)
+            await temp_bot.get_me()
+            update_bot_status(token, "active")
+        except Exception:
+            update_bot_status(token, "inactive")
+
+
+async def set_reaction_with_bots(bot: Bot, chat_id: int, message_id: int, emoji: str, count: int = 1):
+    await refresh_bot_statuses()
+    if emoji == "random" or not emoji:
+        emoji = random.choice(EMOJIS)
+
+    payload = build_reaction_payload(emoji)
+    if not payload:
+        return
+
+    bot_rows = [row for row in get_all_bots() if row and row[0]]
+    selected_bots = []
+    for row in bot_rows:
+        token = row[0]
+        status = (row[5] or "unknown").lower()
+        if status != "active":
+            continue
+        selected_bots.append((token, row[2] or row[1] or token))
+
+    if not selected_bots:
+        await bot.set_message_reaction(chat_id, message_id, reaction=payload)
+        return
+
+    if emoji:
+        for token, _ in selected_bots[:count]:
+            set_bot_reaction(token, emoji)
+
+    reactors = [bot]
+    for token, _ in selected_bots[:count]:
+        if token == bot.token:
+            continue
+        reactors.append(Bot(token=token))
+
+    for reactor in reactors:
+        try:
+            await reactor.set_message_reaction(chat_id, message_id, reaction=payload)
+        except Exception:
+            continue
+
+
+def build_bot_selector_markup(chat_id: int, message_id: int):
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    kb = InlineKeyboardBuilder()
+    for row in get_all_bots():
+        if not row:
+            continue
+        token = row[0]
+        title = row[2] or row[1] or token
+        status = (row[5] or "unknown").lower()
+        label = f"{title} — {'✅' if status == 'active' else '⚠️'}"
+        callback_data = f"bot_cfg|{token}|{chat_id}|{message_id}"
+        kb.row(InlineKeyboardButton(text=label, callback_data=callback_data))
+    kb.row(InlineKeyboardButton(text="↩️ Orqaga", callback_data=f"bot_cfg|back|{chat_id}|{message_id}"))
+    return kb.as_markup()
+
+
+def build_bot_reaction_markup(token: str, chat_id: int, message_id: int):
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    kb = InlineKeyboardBuilder()
+    row = []
+    for i, emoji in enumerate(EMOJIS):
+        row.append(InlineKeyboardButton(
+            text=f"{emoji} {'✅' if get_bot_reaction(token) == emoji else ''}".strip(),
+            callback_data=f"bot_set|{token}|{chat_id}|{message_id}|{emoji}"
+        ))
+        if len(row) == 5:
+            kb.row(*row)
+            row = []
+    if row:
+        kb.row(*row)
+    kb.row(
+        InlineKeyboardButton(text="🎲 Random", callback_data=f"bot_set|{token}|{chat_id}|{message_id}|random"),
+        InlineKeyboardButton(text="✅ Tayyor", callback_data=f"bot_set|{token}|{chat_id}|{message_id}|done")
+    )
+    return kb.as_markup()
+
+
+async def set_bot_reaction_from_callback(bot: Bot, chat_id: int, message_id: int, token: str, emoji: str):
+    if not token:
+        return
+    if emoji != "done" and emoji != "random":
+        set_bot_reaction(token, emoji)
+    elif emoji == "random":
+        set_bot_reaction(token, "random")
+    await bot.send_message(chat_id, f"✅ Bot uchun reaksiya saqlandi: {emoji if emoji != 'done' else get_bot_reaction(token)}")
 
 
 def parse_reaction_callback(data: str):
@@ -138,8 +250,23 @@ async def cmd_reaksiya(msg: Message, bot: Bot):
         await delete_msg(bot, msg.chat.id, msg.message_id)
         return
 
+    mode, payload = parse_reaction_command(msg.text)
+    if msg.reply_to_message and mode == "react" and payload:
+        target_message = msg.reply_to_message
+        await set_reaction(bot, msg.chat.id, target_message.message_id, payload)
+        await delete_msg(bot, msg.chat.id, msg.message_id)
+        return
+
+    if mode == "premium":
+        await msg.answer(
+            "Premium emoji tanlash uchun quyidagi tugmalarni ishlating 👇",
+            reply_markup=reaction_kb(None, msg.chat.id, "group")
+        )
+        await delete_msg(bot, msg.chat.id, msg.message_id)
+        return
+
     gr = get_group(msg.chat.id)
-    selected = gr[3] if gr else "random"
+    selected = get_reaction_from_row(gr)
     sent = await msg.answer(
         "Guruhga har safar xabar yuborilganda qaysi reaksiya bosilishini tanlang 👇\n\n✅ Tanlab bo'lganingizdan keyin tayyor tugmasini bosing",
         reply_markup=reaction_kb(selected, msg.chat.id, "group")
@@ -149,6 +276,55 @@ async def cmd_reaksiya(msg: Message, bot: Bot):
     await delete_msg(bot, msg.chat.id, msg.message_id)
 
 # Reaksiya tanlash callback
+@router.callback_query(F.data.startswith("bot_cfg|"))
+async def bot_config_selected(call: CallbackQuery, bot: Bot):
+    parts = call.data.split("|")
+    if len(parts) < 2:
+        return
+    action = parts[0]
+    if action != "bot_cfg":
+        return
+    if parts[1] == "back":
+        await safe_edit_text(call.message, "Botlar ro'yxati 👇", reply_markup=build_bot_selector_markup(int(parts[2]), int(parts[3])))
+        return
+
+    token = parts[1]
+    chat_id = int(parts[2])
+    message_id = int(parts[3])
+    await refresh_bot_statuses()
+    bot_row = get_bot_by_token(token)
+    if not bot_row:
+        await call.answer("Bot topilmadi", show_alert=True)
+        return
+    title = bot_row[2] or bot_row[1] or token
+    status = (bot_row[5] or "unknown").lower()
+    emoji = get_bot_reaction(token)
+    await safe_edit_text(
+        call.message,
+        f"🤖 <b>{title}</b>\n\nStatus: {'✅ Active' if status == 'active' else '⚠️ Inactive'}\nJoriy reaksiya: {emoji}",
+        reply_markup=build_bot_reaction_markup(token, chat_id, message_id),
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data.startswith("bot_set|"))
+async def bot_set_selected(call: CallbackQuery, bot: Bot):
+    parts = call.data.split("|")
+    if len(parts) < 5:
+        return
+    token = parts[1]
+    chat_id = int(parts[2])
+    message_id = int(parts[3])
+    emoji = parts[4]
+    await set_bot_reaction_from_callback(bot, chat_id, message_id, token, emoji)
+    await call.answer(f"✅ {token} uchun reaksiya saqlandi", show_alert=True)
+    await safe_edit_text(
+        call.message,
+        f"🤖 {token}\n\nReaksiya saqlandi: {get_bot_reaction(token)}",
+        reply_markup=build_bot_reaction_markup(token, chat_id, message_id)
+    )
+
+
 @router.callback_query(F.data.startswith("react_"))
 async def react_selected(call: CallbackQuery):
     if call.message.chat.type == "private" and not is_fresh_private_callback(call):
@@ -161,15 +337,15 @@ async def react_selected(call: CallbackQuery):
     if payload == "done":
         if kind == "group":
             gr = get_group(chat_id)
-            emoji_value = gr[3] if gr else "random"
+            emoji_value = get_reaction_from_row(gr)
         else:
             ch = get_channel(chat_id)
-            emoji_value = ch[3] if ch else "random"
+            emoji_value = get_reaction_from_row(ch)
         if call.message.chat.type == "private":
             lang = get_user_lang(call.from_user.id)
             if kind == "group":
                 gr = get_group(chat_id)
-                auto_react = bool(gr[4]) if gr else False
+                auto_react = get_auto_react_from_row(gr)
                 await safe_edit_text(
                     call.message,
                     f"👥 <b>{gr[1] if gr else chat_id}</b>\n\nJoriy reaksiya: {reaction_value_label(emoji_value)}",
@@ -178,7 +354,7 @@ async def react_selected(call: CallbackQuery):
                 )
             else:
                 ch = get_channel(chat_id)
-                auto_react = bool(ch[4]) if ch else False
+                auto_react = get_auto_react_from_row(ch)
                 await safe_edit_text(
                     call.message,
                     f"📢 <b>{ch[1] if ch else chat_id}</b>\n\nJoriy reaksiya: {reaction_value_label(emoji_value)}",
@@ -193,11 +369,11 @@ async def react_selected(call: CallbackQuery):
     if kind == "group":
         set_group_reaction(chat_id, emoji)
         current = get_group(chat_id)
-        selected = current[3] if current else emoji
+        selected = get_reaction_from_row(current, emoji)
     else:
         set_channel_reaction(chat_id, emoji)
         current = get_channel(chat_id)
-        selected = current[3] if current else emoji
+        selected = get_reaction_from_row(current, emoji)
 
     await safe_edit_reply_markup(call.message, reply_markup=reaction_kb(selected, chat_id, kind))
     if call.message.chat.type == "private":
@@ -226,28 +402,28 @@ async def cmd_reaksiya_off(msg: Message, bot: Bot):
     await msg.answer("❌ Bu guruh uchun 🤖 Auto reaksiya o'chirildi")
     await delete_msg(bot, msg.chat.id, msg.message_id)
 
-# /bos
+# /bos və /bos5
 @router.message(Command("bos"), F.chat.type.in_({"group", "supergroup"}))
+@router.message(Command("bos5"), F.chat.type.in_({"group", "supergroup"}))
 async def cmd_bos(msg: Message, bot: Bot):
     if not await is_admin(bot, msg.chat.id, msg.from_user.id):
         await delete_msg(bot, msg.chat.id, msg.message_id)
         return
 
-    parts = msg.text.split(maxsplit=1)
-    if len(parts) < 2:
+    count, emoji = parse_bos_command(msg.text)
+    if not emoji:
+        await refresh_bot_statuses()
+        target_message_id = msg.reply_to_message.message_id if msg.reply_to_message else msg.message_id
         await msg.answer(
-            "/bos dan keyin emoji qo'yib yuboring.\nMasalan: /bos 😎"
+            "Botlar ro'yxati 👇",
+            reply_markup=build_bot_selector_markup(msg.chat.id, target_message_id)
         )
         await delete_msg(bot, msg.chat.id, msg.message_id)
         return
 
-    emoji = parts[1].strip()
     try:
-        await bot.set_message_reaction(
-            msg.chat.id,
-            msg.reply_to_message.message_id if msg.reply_to_message else msg.message_id,
-            reaction=[{"type": "emoji", "emoji": emoji}]
-        )
+        target_message_id = msg.reply_to_message.message_id if msg.reply_to_message else msg.message_id
+        await set_reaction_with_bots(bot, msg.chat.id, target_message_id, emoji, count)
     except Exception as e:
         await msg.answer(f"Xato: {e}")
     await delete_msg(bot, msg.chat.id, msg.message_id)
@@ -275,10 +451,10 @@ async def auto_react_handler(msg: Message, bot: Bot):
     gr = get_group(msg.chat.id)
     if not gr:
         return
-    auto_react = bool(gr[4])
+    auto_react = get_auto_react_from_row(gr)
     if not auto_react or not await bot_is_admin(bot, msg.chat.id):
         return
-    await set_reaction(bot, msg.chat.id, msg.message_id, gr[3])
+    await set_reaction(bot, msg.chat.id, msg.message_id, get_reaction_from_row(gr))
 
 # Auto react toggle (bot chatidan)
 @router.callback_query(F.data.startswith("toggle_auto_"))
@@ -291,7 +467,7 @@ async def toggle_auto_react(call: CallbackQuery):
     if not gr:
         await call.answer("Guruh topilmadi!", show_alert=True)
         return
-    new_state = not bool(gr[4])
+    new_state = not get_auto_react_from_row(gr)
     set_group_auto_react(chat_id, new_state)
     lang = get_user_lang(call.from_user.id)
     await safe_edit_reply_markup(
@@ -311,7 +487,7 @@ async def change_react(call: CallbackQuery):
         return
     chat_id = int(call.data.replace("change_react_", ""))
     gr = get_group(chat_id)
-    selected = gr[3] if gr else "random"
+    selected = get_reaction_from_row(gr)
     await safe_edit_text(
         call.message,
         "Yangi reaksiyani tanlang 👇",
@@ -331,7 +507,7 @@ async def toggle_ch_auto(call: CallbackQuery):
     if not ch:
         await call.answer("Kanal topilmadi!", show_alert=True)
         return
-    new_state = not bool(ch[4])
+    new_state = not get_auto_react_from_row(ch)
     set_channel_auto_react(chat_id, new_state)
     lang = get_user_lang(call.from_user.id)
     await safe_edit_reply_markup(
@@ -351,7 +527,7 @@ async def change_ch_react(call: CallbackQuery):
         return
     chat_id = int(call.data.replace("change_ch_react_", ""))
     ch = get_channel(chat_id)
-    selected = ch[3] if ch else "random"
+    selected = get_reaction_from_row(ch)
     await safe_edit_text(
         call.message,
         "Yangi reaksiyani tanlang 👇",
@@ -366,6 +542,6 @@ async def auto_react_channel_post(msg: Message, bot: Bot):
     ch = get_channel(msg.chat.id)
     if not ch:
         return
-    if not bool(ch[4]) or not await bot_is_admin(bot, msg.chat.id):
+    if not get_auto_react_from_row(ch) or not await bot_is_admin(bot, msg.chat.id):
         return
-    await set_reaction(bot, msg.chat.id, msg.message_id, ch[3])
+    await set_reaction(bot, msg.chat.id, msg.message_id, get_reaction_from_row(ch))

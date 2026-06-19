@@ -120,16 +120,24 @@ def channel_settings_kb(chat_id, auto_react, lang="uz"):
 # Admin panel
 def admin_kb(is_root: bool = False):
     kb = InlineKeyboardBuilder()
-    kb.row(InlineKeyboardButton(text="👥 Foydalanuvchilar", callback_data="admin_users"))
-    kb.row(InlineKeyboardButton(text="📊 Statistika", callback_data="admin_stats"))
-    kb.row(InlineKeyboardButton(text="📨 Xabar yuborish", callback_data="admin_broadcast"))
-    kb.row(InlineKeyboardButton(text="🚫 Bloklash", callback_data="admin_block"))
-    kb.row(InlineKeyboardButton(text="✅ Blokdan chiqarish", callback_data="admin_unblock"))
-    kb.row(InlineKeyboardButton(text="📋 Bloklangan", callback_data="admin_view_blocked"))
+    kb.row(
+        InlineKeyboardButton(text="👥 Foydalanuvchilar", callback_data="admin_users"),
+        InlineKeyboardButton(text="📊 Statistika", callback_data="admin_stats")
+    )
+    kb.row(
+        InlineKeyboardButton(text="📨 Xabar yuborish", callback_data="admin_broadcast"),
+        InlineKeyboardButton(text="🚫 Bloklash", callback_data="admin_block")
+    )
+    kb.row(
+        InlineKeyboardButton(text="✅ Blokdan chiqarish", callback_data="admin_unblock"),
+        InlineKeyboardButton(text="📋 Bloklangan", callback_data="admin_view_blocked")
+    )
     kb.row(InlineKeyboardButton(text="🤖 Botlar", callback_data="admin_bots"))
     if is_root:
-        kb.row(InlineKeyboardButton(text="➕ Yangi bot", callback_data="admin_new_bot"))
-        kb.row(InlineKeyboardButton(text="➕ Admin qo'shish", callback_data="admin_add"))
+        kb.row(
+            InlineKeyboardButton(text="➕ Yangi bot", callback_data="admin_new_bot"),
+            InlineKeyboardButton(text="➕ Admin qo'shish", callback_data="admin_add")
+        )
         kb.row(InlineKeyboardButton(text="👑 Adminlar", callback_data="admin_admins"))
     kb.row(InlineKeyboardButton(text="➕ Majburiy obuna", callback_data="admin_sub"))
     return kb.as_markup()

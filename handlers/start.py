@@ -3,10 +3,12 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart, Command
 import json, os
 import random
+from datetime import datetime, timedelta
 
 from config import SUBSCRIBE_CHANNEL
 from database import get_user, add_user, get_user_lang, get_user_private_auto_react, get_user_private_active_message_id, set_user_private_active_message_id, is_blocked, get_all_channels_by_user, get_all_groups_by_user, get_setting
 from keyboards.inline import main_menu_kb, channels_kb, groups_kb, lang_kb, invite_link_kb, subscribe_kb
+from handlers.utils import get_reaction_from_row, get_auto_react_from_row, get_subscription_duration_seconds
 
 router = Router()
 
@@ -58,13 +60,39 @@ def stale_button_text() -> str:
 
 
 def get_required_subscribe_channel() -> str:
-    channel = get_setting("subscribe_channel")
-    return channel if channel else SUBSCRIBE_CHANNEL
+    channel = get_setting("subscribe_channel") or SUBSCRIBE_CHANNEL
+    return channel if channel else ""
+
+
+def is_subscription_window_active() -> bool:
+    channel = get_required_subscribe_channel()
+    if not channel:
+        return True
+
+    duration_value = get_setting("subscribe_duration_value")
+    duration_unit = get_setting("subscribe_duration_unit") or "forever"
+    started_at = get_setting("subscribe_started_at")
+    if duration_unit == "forever":
+        return True
+    if not started_at or not duration_value:
+        return True
+
+    try:
+        started = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+    except Exception:
+        return True
+
+    seconds = get_subscription_duration_seconds(int(duration_value), duration_unit)
+    if not seconds:
+        return True
+    return datetime.utcnow() < started + timedelta(seconds=seconds)
 
 
 async def is_user_subscribed(bot, user_id: int) -> bool:
     channel = get_required_subscribe_channel()
     if not channel:
+        return True
+    if not is_subscription_window_active():
         return True
     try:
         member = await bot.get_chat_member(channel, user_id)
@@ -214,8 +242,8 @@ async def channel_settings(call: CallbackQuery):
     if not ch:
         await call.answer("Kanal topilmadi!", show_alert=True)
         return
-    auto_react = bool(ch[4])
-    emoji = ch[3] if ch[3] != "random" else "🎲 random"
+    auto_react = get_auto_react_from_row(ch)
+    emoji = get_reaction_from_row(ch) if get_reaction_from_row(ch) != "random" else "🎲 random"
     await call.message.edit_text(
         f"📢 <b>{ch[1]}</b>\n\nJoriy reaksiya: {emoji}",
         reply_markup=channel_settings_kb(chat_id, auto_react, lang),
@@ -236,8 +264,8 @@ async def group_settings(call: CallbackQuery):
     if not gr:
         await call.answer("Guruh topilmadi!", show_alert=True)
         return
-    auto_react = bool(gr[4])
-    emoji = gr[3] if gr[3] != "random" else "🎲 random"
+    auto_react = get_auto_react_from_row(gr)
+    emoji = get_reaction_from_row(gr) if get_reaction_from_row(gr) != "random" else "🎲 random"
     await call.message.edit_text(
         f"👥 <b>{gr[1]}</b>\n\nJoriy reaksiya: {emoji}",
         reply_markup=group_settings_kb(chat_id, auto_react, lang),

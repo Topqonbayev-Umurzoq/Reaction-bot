@@ -16,8 +16,10 @@ from database import (
     get_setting,
 )
 from keyboards.inline import lang_kb, settings_menu_kb, subscribe_kb
+from handlers.utils import get_subscription_duration_seconds
 import json, os
 import random
+from datetime import datetime, timedelta
 
 router = Router()
 
@@ -63,13 +65,39 @@ def stale_button_text() -> str:
 
 
 def get_required_subscribe_channel() -> str:
-    channel = get_setting("subscribe_channel")
-    return channel if channel else SUBSCRIBE_CHANNEL
+    channel = get_setting("subscribe_channel") or SUBSCRIBE_CHANNEL
+    return channel if channel else ""
+
+
+def is_subscription_window_active() -> bool:
+    channel = get_required_subscribe_channel()
+    if not channel:
+        return True
+
+    duration_value = get_setting("subscribe_duration_value")
+    duration_unit = get_setting("subscribe_duration_unit") or "forever"
+    started_at = get_setting("subscribe_started_at")
+    if duration_unit == "forever":
+        return True
+    if not started_at or not duration_value:
+        return True
+
+    try:
+        started = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+    except Exception:
+        return True
+
+    seconds = get_subscription_duration_seconds(int(duration_value), duration_unit)
+    if not seconds:
+        return True
+    return datetime.utcnow() < started + timedelta(seconds=seconds)
 
 
 async def is_user_subscribed(bot, user_id: int) -> bool:
     channel = get_required_subscribe_channel()
     if not channel:
+        return True
+    if not is_subscription_window_active():
         return True
     try:
         member = await bot.get_chat_member(channel, user_id)

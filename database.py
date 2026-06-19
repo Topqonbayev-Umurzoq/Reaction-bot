@@ -54,6 +54,7 @@ def init_db():
         added_by        INTEGER,
         status          TEXT DEFAULT 'unknown',
         last_checked    TEXT DEFAULT (datetime('now')),
+        reaction_emoji  TEXT DEFAULT '👍',
         added_at        TEXT DEFAULT (datetime('now'))
     )''')
 
@@ -90,6 +91,12 @@ def init_db():
         try:
             c.execute('ALTER TABLE bots ADD COLUMN last_checked TEXT')
             c.execute('UPDATE bots SET last_checked = datetime("now") WHERE last_checked IS NULL')
+        except sqlite3.OperationalError:
+            pass
+    if 'reaction_emoji' not in bot_columns:
+        try:
+            c.execute('ALTER TABLE bots ADD COLUMN reaction_emoji TEXT DEFAULT "👍"')
+            c.execute('UPDATE bots SET reaction_emoji = "👍" WHERE reaction_emoji IS NULL')
         except sqlite3.OperationalError:
             pass
 
@@ -336,9 +343,9 @@ def add_bot(bot_token, bot_username, bot_title, added_by):
     conn = get_conn()
     c = conn.cursor()
     c.execute('''INSERT OR REPLACE INTO bots
-                 (bot_token, bot_username, bot_title, added_by, status)
-                 VALUES (?, ?, ?, ?, ?)''',
-              (bot_token, bot_username, bot_title, added_by, 'unknown'))
+                 (bot_token, bot_username, bot_title, added_by, status, reaction_emoji)
+                 VALUES (?, ?, ?, ?, ?, ?)''',
+              (bot_token, bot_username, bot_title, added_by, 'unknown', '👍'))
     conn.commit()
     conn.close()
 
@@ -355,10 +362,36 @@ def get_bot_count():
 def get_all_bots():
     conn = get_conn()
     c = conn.cursor()
-    c.execute('SELECT bot_token, bot_username, bot_title, added_by, added_at, status, last_checked FROM bots')
+    c.execute('SELECT bot_token, bot_username, bot_title, added_by, added_at, status, last_checked, reaction_emoji FROM bots')
     rows = c.fetchall()
     conn.close()
     return rows
+
+
+def get_bot_by_token(bot_token):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('SELECT bot_token, bot_username, bot_title, added_by, added_at, status, last_checked, reaction_emoji FROM bots WHERE bot_token = ?', (bot_token,))
+    row = c.fetchone()
+    conn.close()
+    return row
+
+
+def get_bot_reaction(bot_token):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('SELECT reaction_emoji FROM bots WHERE bot_token = ?', (bot_token,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row and row[0] else '👍'
+
+
+def set_bot_reaction(bot_token, emoji):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('UPDATE bots SET reaction_emoji = ? WHERE bot_token = ?', (emoji, bot_token))
+    conn.commit()
+    conn.close()
 
 
 def update_bot_status(bot_token, status, last_checked=None):

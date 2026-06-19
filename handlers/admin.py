@@ -6,13 +6,16 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import InlineKeyboardButton
 
+import asyncio
 from config import ADMIN_ID, SUBSCRIBE_CHANNEL
+from handlers.utils import parse_subscription_duration
 from database import (
     get_all_users, block_user, unblock_user, is_blocked,
     add_admin, get_admins, is_admin_user, remove_admin, remove_all_admins,
     get_all_blocked_users, unblock_all_users,
     get_setting, set_setting, delete_setting,
-    add_bot, get_bot_count, get_all_bots, update_bot_status, remove_bot
+    add_bot, get_bot_count, get_all_bots, update_bot_status, remove_bot,
+    get_bot_by_token
 )
 from keyboards.inline import admin_kb, back_kb
 
@@ -38,41 +41,159 @@ def is_admin(user_id):
     return user_id == ADMIN_ID or is_admin_user(user_id)
 
 
-# /admin buyrug'i
-@router.message(Command("admin"))
-async def cmd_admin(msg: Message):
-    if not is_admin(msg.from_user.id):
-        return
-    if is_blocked(msg.from_user.id):
-        await msg.answer("❌ Siz bloklandingiz.")
-        return
-    is_root = is_root_admin(msg.from_user.id)
-    extra = f"\n\n<b>Hozirgi ID:</b> <code>{msg.from_user.id}</code>"
-    if is_root:
-        extra += "\n<b>Siz bosh admin hisoblanasiz.</b>"
-    else:
-        extra += "\nSiz admin sifatida ishlayapsiz."
+async def is_group_admin(bot: Bot, chat_id: int, user_id: int) -> bool:
+    try:
+        member = await bot.get_chat_member(chat_id, user_id)
+        return member.status in {"administrator", "creator"}
+    except Exception:
+        return False
 
-    from database import get_conn, get_setting
-    conn = get_conn()
-    c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM groups")
-    groups = c.fetchone()[0]
-    c.execute("SELECT COUNT(*) FROM channels")
-    channels = c.fetchone()[0]
-    c.execute("SELECT COUNT(*) FROM bots")
-    bots = c.fetchone()[0]
-    conn.close()
 
-    required_channel = get_setting("subscribe_channel") or SUBSCRIBE_CHANNEL
-    if not required_channel:
-        required_channel = "yo'q"
+def format_duration_label(value: int, unit: str) -> str:
+    labels = {"month": "oy", "week": "hafta", "hour": "soat", "forever": "abadiy"}
+    if unit == "forever":
+        return labels[unit]
+    return f"{value} {labels.get(unit, unit)}"
+
+
+def parse_admin_command(text: str | None) -> tuple[bool, int | None]:
+    if not text:
+        return False, None
+
+    cleaned = text.strip()
+    if not cleaned:
+        return False, None
+
+    parts = cleaned.split()
+    command = parts[0].lower()
+    if not command.startswith("/admin"):
+        return False, None
+
+    if command == "/admin":
+        return True, None
+
+    if command == "/admin100":
+        return True, 100
+
+    if command.startswith("/admin"):
+        number = command[6:]
+        if number.isdigit():
+            count = int(number)
+            if 1 <= count <= 100:
+                return True, count
+
+    if len(parts) > 1 and parts[0].lower() == "/admin100":
+        try:
+            count = int(parts[1])
+        except ValueError:
+            return True, 100
+        if 1 <= count <= 100:
+            return True, count
+        return True, 100
+
+    return True, None
+
+
+def parse_admin100_count(text: str | None) -> int:
+    is_admin_cmd, count = parse_admin_command(text)
+    if not is_admin_cmd:
+        return 100
+    return count if count is not None else 100
+
+
+# /admin va /admin11 singari buyruqlar
+@router.message(F.text.regexp(r"^/admin(?:\d+)?$"))
+async def cmd_admin(msg: Message, bot: Bot):
+    if not msg.text:
+        return
+
+    is_admin_cmd, count = parse_admin_command(msg.text)
+    if not is_admin_cmd:
+        return
+
+    if count is None:
+        if not is_admin(msg.from_user.id):
+            return
+        if is_blocked(msg.from_user.id):
+            await msg.answer("❌ Siz bloklandingiz.")
+            return
+        is_root = is_root_admin(msg.from_user.id)
+        extra = f"\n\n<b>Hozirgi ID:</b> <code>{msg.from_user.id}</code>"
+        if is_root:
+            extra += "\n<b>Siz bosh admin hisoblanasiz.</b>"
+        else:
+            extra += "\nSiz admin sifatida ishlayapsiz."
+
+        from database import get_conn, get_setting
+        conn = get_conn()
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM groups")
+        groups = c.fetchone()[0]
+        c.execute("SELECT COUNT(*) FROM channels")
+        channels = c.fetchone()[0]
+        c.execute("SELECT COUNT(*) FROM bots")
+        bots = c.fetchone()[0]
+        conn.close()
+
+        required_channel = get_setting("subscribe_channel") or SUBSCRIBE_CHANNEL or "yo'q"
+        duration_value = get_setting("subscribe_duration_value")
+        duration_unit = get_setting("subscribe_duration_unit") or "forever"
+        duration_label = format_duration_label(int(duration_value) if duration_value else 1, duration_unit)
+        if required_channel == "yo'q":
+            duration_label = "o'chirilgan"
+
+        await msg.answer(
+            "👨‍💼 <b>Admin Panel</b>" + extra +
+            f"\n\n👥 Guruhlar: <b>{groups}</b>\n📢 Kanallar: <b>{channels}</b>\n🤖 Botlar: <b>{bots}</b>\n\nMajburiy obuna: <b>{required_channel}</b>\nMuddat: <b>{duration_label}</b>\n\nBu botlar asosiy bot orqali boshqariladi.",
+            reply_markup=admin_kb(is_root=is_root),
+            parse_mode="HTML"
+        )
+        return
+
+    if not await is_group_admin(bot, msg.chat.id, msg.from_user.id):
+        return
+
+    if count is None:
+        count = 100
+
+    bots = [row for row in get_all_bots() if row and row[0] and (row[5] or "unknown").lower() == "active"]
+    if not bots:
+        await msg.answer("⚠️ Faol botlar topilmadi. Avval admin panel orqali bot qo'shing.")
+        return
+
+    available = len(bots)
+    if count > available:
+        count = available
+    if count < 1:
+        count = 1
+
+    selected = bots[:count]
+    added = 0
+    skipped = 0
+    for bot_row in selected:
+        token = bot_row[0]
+        try:
+            temp_bot = Bot(token=token)
+            me = await temp_bot.get_me()
+            await asyncio.sleep(0.2)
+            try:
+                current = await bot.get_chat_member(msg.chat.id, me.id)
+                if current.status not in {"left", "kicked"}:
+                    skipped += 1
+                    continue
+            except Exception:
+                pass
+            try:
+                await bot.add_chat_member(msg.chat.id, me.id)
+                added += 1
+            except Exception:
+                skipped += 1
+        except Exception:
+            skipped += 1
 
     await msg.answer(
-        "👨‍💼 <b>Admin Panel</b>" + extra +
-        f"\n\n👥 Guruhlar: <b>{groups}</b>\n📢 Kanallar: <b>{channels}</b>\n🤖 Botlar: <b>{bots}</b>\n\nMajburiy obuna: <b>{required_channel}</b>\n\nBu botlar asosiy bot orqali boshqariladi.",
-        reply_markup=admin_kb(is_root=is_root),
-        parse_mode="HTML"
+        f"✅ {added} ta faol bot guruhga qo‘shildi.\n⚠️ {skipped} ta bot o'tkazib yuborildi yoki qo‘shilmadi.\n\n📊 Hozirda faol botlar soni: {available}",
+        reply_markup=back_kb("admin_back")
     )
 
 
@@ -496,16 +617,88 @@ async def admin_sub(call: CallbackQuery, state: FSMContext):
         await call.answer("❌ Siz bloklandingiz.")
         return
 
-    current_channel = get_setting("subscribe_channel") or SUBSCRIBE_CHANNEL
-    if not current_channel:
+    current_channel = get_setting("subscribe_channel") or "yo'q"
+    if current_channel in {None, "", "None", "yo'q"}:
         current_channel = "yo'q"
+
+    duration_value = get_setting("subscribe_duration_value")
+    duration_unit = get_setting("subscribe_duration_unit") or "forever"
+    duration_label = format_duration_label(int(duration_value) if duration_value else 1, duration_unit)
+    if current_channel == "yo'q":
+        duration_label = "o'chirilgan"
+
+    kb = InlineKeyboardBuilder()
+    kb.row(
+        InlineKeyboardButton(text="⚙️ O'rnatish", callback_data="admin_sub_set"),
+    )
+    if current_channel != "yo'q":
+        kb.row(InlineKeyboardButton(text="🗑️ O'chirish", callback_data="admin_sub_remove"))
+    kb.row(InlineKeyboardButton(text="↩️ Orqaga", callback_data="admin_back"))
+
+    await call.message.edit_text(
+        "➕ <b>Majburiy obuna</b>\n\n"
+        f"Hozirgi kanal: <b>{current_channel}</b>\n"
+        f"Muddat: <b>{duration_label}</b>\n\n"
+        "O'rnatish uchun kanal username (@username) va muddatni yuboring.\n"
+        "Masalan: @channel 1 oy",
+        reply_markup=kb.as_markup(),
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data == "admin_sub_set")
+async def admin_sub_set(call: CallbackQuery, state: FSMContext):
+    if not is_admin(call.from_user.id):
+        return
+    if is_blocked(call.from_user.id):
+        await call.answer("❌ Siz bloklandingiz.")
+        return
 
     await state.set_state(AdminState.waiting_sub_channel)
     await call.message.edit_text(
         "➕ <b>Majburiy obuna</b>\n\n"
-        f"Hozirgi kanal: <b>{current_channel}</b>\n\n"
-        "Obuna talab qilinadigan kanal username (@username) ni yuboring.\n"
-        "Agar talabni olib tashlamoqchi bo'lsangiz, clear deb yozing.",
+        "Kanal username (@username) va muddati yuboring.\n"
+        "Mavjud variantlar: 1 oy, 1 hafta, 48 soat, 24 soat, bir umr",
+        reply_markup=back_kb("admin_back"),
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data == "admin_sub_remove")
+async def admin_sub_remove(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return
+    if is_blocked(call.from_user.id):
+        await call.answer("❌ Siz bloklandingiz.")
+        return
+
+    kb = InlineKeyboardBuilder()
+    kb.row(
+        InlineKeyboardButton(text="✅ Ha", callback_data="admin_sub_remove_confirm"),
+        InlineKeyboardButton(text="❌ Yo'q", callback_data="admin_sub")
+    )
+    kb.row(InlineKeyboardButton(text="↩️ Orqaga", callback_data="admin_back"))
+    await call.message.edit_text(
+        "🗑️ Majburiy obuna o'chirilsinmi?",
+        reply_markup=kb.as_markup(),
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data == "admin_sub_remove_confirm")
+async def admin_sub_remove_confirm(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return
+    if is_blocked(call.from_user.id):
+        await call.answer("❌ Siz bloklandingiz.")
+        return
+
+    delete_setting("subscribe_channel")
+    delete_setting("subscribe_duration_value")
+    delete_setting("subscribe_duration_unit")
+    delete_setting("subscribe_started_at")
+    await call.message.edit_text(
+        "✅ Majburiy obuna o'chirildi.",
         reply_markup=back_kb("admin_back"),
         parse_mode="HTML"
     )
@@ -522,22 +715,29 @@ async def admin_set_sub_channel(msg: Message, state: FSMContext):
         return
 
     text = msg.text.strip()
-    if text.lower() == "clear":
-        delete_setting("subscribe_channel")
-        await msg.answer("✅ Majburiy obuna bekor qilindi.", reply_markup=back_kb("admin_back"))
-        await state.clear()
-        return
+    parts = text.split(maxsplit=1)
+    channel = parts[0].strip()
+    duration_text = parts[1].strip() if len(parts) > 1 else ""
 
-    channel = text
     if channel.startswith("https://t.me/"):
         channel = channel.split("https://t.me/")[-1].strip()
     if not channel.startswith("@"):
         channel = "@" + channel
 
+    duration_value, duration_unit = parse_subscription_duration(duration_text or "bir umr")
+    if not duration_text.strip():
+        duration_value, duration_unit = 1, "forever"
+
     try:
         await msg.bot.get_chat(channel)
         set_setting("subscribe_channel", channel)
-        await msg.answer(f"✅ Majburiy obuna kanali {channel} qilib belgilandi.", reply_markup=back_kb("admin_back"))
+        set_setting("subscribe_duration_value", str(duration_value))
+        set_setting("subscribe_duration_unit", duration_unit)
+        set_setting("subscribe_started_at", datetime.utcnow().replace(microsecond=0).isoformat())
+        await msg.answer(
+            f"✅ Majburiy obuna {channel} ga o'rnatildi.\nMuddat: {format_duration_label(duration_value, duration_unit)}",
+            reply_markup=back_kb("admin_back")
+        )
     except Exception:
         await msg.answer("❌ Kanal topilmadi yoki username noto'g'ri. Iltimos qayta urinib ko'ring.")
     finally:
@@ -592,13 +792,19 @@ async def admin_new_bot_do(msg: Message, state: FSMContext):
     if parts and parts[0].lower() == "bot" and len(parts) > 1:
         token = parts[1].strip()
 
+    existing = get_bot_by_token(token)
+    if existing:
+        await msg.answer("⚠️ Bu bot allaqachon ro‘yxatda mavjud. Yangi token yuboring.", reply_markup=back_kb("admin_back"))
+        await state.clear()
+        return
+
     status, username, title = await check_bot_token(token)
     if status == "active":
         add_bot(token, username, title, msg.from_user.id)
         update_bot_status(token, "active")
         await msg.answer(f"✅ Yangi bot saqlandi: {title} ({username})", reply_markup=back_kb("admin_back"))
     else:
-        await msg.answer("❌ Token noto'g'ri yoki botga ulanish mumkin emas. Iltimos qayta urinib ko'ring.")
+        await msg.answer("❌ Token noto'g'ri, eskirgan yoki botga ulanish mumkin emas. Faqat faol bot tokenini qabul qilamiz.")
     await state.clear()
 
 
@@ -625,7 +831,7 @@ async def admin_bots(call: CallbackQuery):
     text = "🤖 <b>Botlar ro'yxati</b>\n\n"
     active_count = 0
     invalid_count = 0
-    for bot_token, bot_username, bot_title, added_by, added_at, status, last_checked in bots:
+    for bot_token, bot_username, bot_title, added_by, added_at, status, last_checked, reaction_emoji in bots:
         status_icon = "✅" if status == "active" else "❌"
         if status == "active":
             active_count += 1
@@ -665,7 +871,7 @@ async def admin_refresh_bots(call: CallbackQuery):
     active = 0
     invalid = 0
 
-    for bot_token, _, _, _, _, _, _ in bots:
+    for bot_token, _, _, _, _, _, _, _ in bots:
         status, username, title = await check_bot_token(bot_token)
         update_bot_status(bot_token, status)
         if status == "active":
@@ -685,7 +891,7 @@ async def admin_cleanup_invalid_bots(call: CallbackQuery):
         return
 
     bots = get_all_bots()
-    invalid_bots = [bot_token for bot_token, _, _, _, _, status, _ in bots if status != "active"]
+    invalid_bots = [bot_token for bot_token, _, _, _, _, status, _, _ in bots if status != "active"]
     if not invalid_bots:
         await call.answer("✅ Nofaol bot yo'q.")
         return
@@ -724,8 +930,8 @@ async def admin_back(call: CallbackQuery, state: FSMContext):
     bots = c.fetchone()[0]
     conn.close()
 
-    required_channel = get_setting("subscribe_channel") or SUBSCRIBE_CHANNEL
-    if not required_channel:
+    required_channel = get_setting("subscribe_channel")
+    if required_channel in {None, "", "None"}:
         required_channel = "yo'q"
 
     await call.message.edit_text(
